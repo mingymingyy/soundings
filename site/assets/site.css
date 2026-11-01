@@ -288,10 +288,8 @@ td.nodata{padding-left:var(--s3)}
 .report-actions{display:flex;flex-wrap:wrap;gap:var(--s2);margin:var(--s2) 0 var(--s3)}
 .report-grid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:var(--s5);align-items:start;border-top:1px solid var(--rule);padding-top:var(--s3)}
 .report-grid.no-pdf{grid-template-columns:minmax(0,1fr)}
-.notes{font-size:var(--t-small)}
 .notes summary{min-height:var(--tap);display:flex;align-items:center;cursor:pointer;font:400 var(--t-h3)/1.3 var(--serif);color:var(--ink-strong)}
 .md{max-width:var(--measure);overflow-wrap:anywhere}
-.notes .md{font-size:var(--t-small)}
 .md h1,.md h2,.md h3,.md h4{font-family:var(--serif);font-weight:400;color:var(--ink-strong);line-height:1.2;margin:var(--s4) 0 var(--s2)}
 .md h1{font-size:1.75rem}.md h2{font-size:var(--t-h2)}.md h3{font-size:var(--t-h3)}.md h4{font-size:var(--t-body)}
 .notes .md h2{font-size:var(--t-h3)}
