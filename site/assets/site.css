@@ -144,6 +144,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .prov{margin-top:var(--s2);font-size:var(--t-label);color:var(--ink-3);line-height:1.5}
 .prov li{padding:2px 0}
 .prov a{color:var(--ink-2)}
+.prov a,.ev-meta a,.ev-body a,.curve figcaption a,.cb-date a,.cal-notes a,.nodata a{display:inline-flex;align-items:center;min-height:24px}
 .prov time{display:block}
 .prov p{margin-top:var(--s1)}
 .prov p time{display:inline}
@@ -394,7 +395,7 @@ td.nodata{padding-left:var(--s3)}
   .hero-grid{grid-template-columns:minmax(0,1fr)}
   .stamp-k{display:none}
   .prov time{display:inline}
-  .prov li{display:inline-block;margin-right:var(--s2)}
+  .prov li{display:inline-block;margin-right:var(--s2);padding:0}
   .report-grid{grid-template-columns:minmax(0,1fr)}
   .report-grid .notes{order:-1}
   .foot-grid{grid-template-columns:1fr 1fr}
