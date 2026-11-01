@@ -1,0 +1,39 @@
+{
+  "_comment": "BLS blocks scripted access to its schedule, so these dates are copied from the two official pages below. Re-verify and update 'verified' when BLS revises its calendar.",
+  "verified": "2026-11-01",
+  "source_cpi": "https://www.bls.gov/schedule/news_release/cpi.htm",
+  "source_nfp": "https://www.bls.gov/schedule/news_release/empsit.htm",
+  "release_et": "08:30",
+  "cpi": [
+    ["October 2026", "2026-11-10"],
+    ["November 2026", "2026-12-10"],
+    ["December 2026", "2027-01-13"],
+    ["January 2027", "2027-02-11"],
+    ["February 2027", "2027-03-10"],
+    ["March 2027", "2027-04-13"],
+    ["April 2027", "2027-05-12"],
+    ["May 2027", "2027-06-10"],
+    ["June 2027", "2027-07-14"],
+    ["July 2027", "2027-08-11"],
+    ["August 2027", "2027-09-14"],
+    ["September 2027", "2027-10-14"],
+    ["October 2027", "2027-11-10"],
+    ["November 2027", "2027-12-10"]
+  ],
+  "nfp": [
+    ["October 2026", "2026-11-06"],
+    ["November 2026", "2026-12-04"],
+    ["December 2026", "2027-01-08"],
+    ["January 2027", "2027-02-05"],
+    ["February 2027", "2027-03-05"],
+    ["March 2027", "2027-04-02"],
+    ["April 2027", "2027-05-07"],
+    ["May 2027", "2027-06-04"],
+    ["June 2027", "2027-07-02"],
+    ["July 2027", "2027-08-06"],
+    ["August 2027", "2027-09-03"],
+    ["September 2027", "2027-10-08"],
+    ["October 2027", "2027-11-05"],
+    ["November 2027", "2027-12-03"]
+  ]
+}
