@@ -831,9 +831,15 @@ def calendar_events(today, bank_list) -> tuple[list[dict], list[dict]]:
             events.append({"type": "MAS MPS", "title": f"MAS Monetary Policy Statement, {arc['edition']}", "date": arc["date"], "nlt": arc["nlt"], "source": {"name": "MAS release calendar", "url": MAS_ARC_URL}})
 
     def add_singstat():
-        for e in singstat_arc():
+        verified = None
+        try:
+            release_dates = singstat_arc()
+        except Exception:  # noqa: BLE001 - SingStat blocks cloud runners, so use the committed copy
+            snapshot = json.loads((ROOT / "data" / "curated" / "singstat_schedule.json").read_text(encoding="utf-8"))
+            release_dates, verified = snapshot["events"], snapshot["verified"]
+        for e in release_dates:
             if e["date"] >= today.isoformat():
-                events.append({**e, "source": {"name": "SingStat release calendar", "url": SINGSTAT_ARC_URL}})
+                events.append({**e, "source": {"name": "SingStat release calendar", "url": SINGSTAT_ARC_URL}, **({"verifiedSg": verified} if verified else {})})
 
     attempt("FOMC", add_fomc)
     attempt("MAS MPS", add_mps)
@@ -925,4 +931,10 @@ def collect(previous: dict | None = None) -> dict:
 
 
 if __name__ == "__main__":
-    json.dump(collect(), sys.stdout, indent=1)
+    if "--refresh-singstat" in sys.argv:
+        target = ROOT / "data" / "curated" / "singstat_schedule.json"
+        current = json.loads(target.read_text(encoding="utf-8"))
+        current.update(events=singstat_arc(), verified=dt.datetime.now(SGT).date().isoformat())
+        target.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    else:
+        json.dump(collect(), sys.stdout, indent=1)

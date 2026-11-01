@@ -315,6 +315,9 @@ def calendar_panel(idx: int, events: list[dict], gaps: list[dict], today: dt.dat
     sources = [{**s, "asOf": None} for s in names.values()]
     prov = "".join(f'<li><a href="{e(s["url"])}" rel="noopener" target="_blank">{e(s["name"])}</a></li>' for s in sources)
     extra = f"<p>BLS blocks automated access, so its dates are copied from its schedule pages, last verified <time>{e(day_label(verified))}</time>.</p>" if verified else ""
+    verified_sg = next((ev.get("verifiedSg") for ev in events if ev.get("verifiedSg")), None)
+    if verified_sg:
+        extra += f"<p>SingStat blocks this site's build server, so its dates come from a copy of its calendar, last verified <time>{e(day_label(verified_sg))}</time>.</p>"
     aside = f'<div class="prov"><h3>Source and data time</h3><ul>{prov}</ul>{extra}<p>Checked <time>{e(when(generated))}</time></p></div>'
     return panel(idx, "calendar", "Calendar", body, aside)
 

@@ -1,0 +1,109 @@
+{
+  "_comment": "SingStat returns 403 to cloud runners, so this copy of its Advance Release Calendar backs up the live read. Refresh it from a normal connection with: python scripts/feeds.py --refresh-singstat",
+  "verified": "2026-11-01",
+  "source": "https://www.singstat.gov.sg/data-tools-services/advance-release-calendar",
+  "events": [
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Sep 2026",
+      "date": "2026-10-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Oct 2026",
+      "date": "2026-11-23",
+      "nlt": false
+    },
+    {
+      "type": "SG GDP",
+      "title": "GDP, 3Q 2026",
+      "date": "2026-11-25",
+      "nlt": true
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Nov 2026",
+      "date": "2026-12-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Dec 2026",
+      "date": "2027-01-25",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Jan 2027",
+      "date": "2027-02-23",
+      "nlt": false
+    },
+    {
+      "type": "SG GDP",
+      "title": "GDP, 4Q 2026",
+      "date": "2027-02-25",
+      "nlt": true
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Feb 2027",
+      "date": "2027-03-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Mar 2027",
+      "date": "2027-04-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Apr 2027",
+      "date": "2027-05-24",
+      "nlt": false
+    },
+    {
+      "type": "SG GDP",
+      "title": "GDP, 1Q 2027",
+      "date": "2027-05-26",
+      "nlt": true
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, May 2027",
+      "date": "2027-06-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Jun 2027",
+      "date": "2027-07-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Jul 2027",
+      "date": "2027-08-23",
+      "nlt": false
+    },
+    {
+      "type": "SG GDP",
+      "title": "GDP, 2Q 2027",
+      "date": "2027-08-25",
+      "nlt": true
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Aug 2027",
+      "date": "2027-09-23",
+      "nlt": false
+    },
+    {
+      "type": "SG CPI",
+      "title": "CPI For General Households, Sep 2027",
+      "date": "2027-10-25",
+      "nlt": false
+    }
+  ]
+}

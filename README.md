@@ -19,8 +19,10 @@ Rules enforced in `scripts/feeds.py`: a value only comes from a parsed response,
 good value for at most 7 days, marked stale, then becomes a labelled empty state. A market-implied Fed path is left
 out because no free public source publishes one.
 
-**One manual file.** `data/curated/bls_schedule.json` holds the US CPI and NFP dates, copied from the BLS schedule
-pages. It runs to December 2027. Update it and its `verified` date if BLS revises the calendar.
+**Two manual files.** `data/curated/bls_schedule.json` holds the US CPI and NFP dates, copied from the BLS schedule
+pages and running to December 2027. Update it and its `verified` date if BLS revises the calendar.
+`data/curated/singstat_schedule.json` backs up the SingStat calendar, which returns 403 to cloud runners. Refresh it
+from a normal connection with `python scripts/feeds.py --refresh-singstat`.
 
 ## Research
 
