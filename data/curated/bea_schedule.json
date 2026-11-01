@@ -1,0 +1,77 @@
+{
+  "_comment": "Backup of BEA's Personal Income and Outlays release dates, used only if the live read fails. Refresh with: python scripts/feeds.py --refresh-schedules",
+  "verified": "2026-11-01",
+  "source": "https://www.bea.gov/news/schedule",
+  "events": [
+    {
+      "reference": "October 2026",
+      "date": "2026-11-25",
+      "et": "08:30"
+    },
+    {
+      "reference": "November 2026",
+      "date": "2026-12-23",
+      "et": "08:30"
+    },
+    {
+      "reference": "December 2026",
+      "date": "2027-01-28",
+      "et": "08:30"
+    },
+    {
+      "reference": "January 2027",
+      "date": "2027-02-25",
+      "et": "08:30"
+    },
+    {
+      "reference": "February 2027",
+      "date": "2027-03-31",
+      "et": "08:30"
+    },
+    {
+      "reference": "March 2027",
+      "date": "2027-04-29",
+      "et": "08:30"
+    },
+    {
+      "reference": "April 2027",
+      "date": "2027-05-27",
+      "et": "08:30"
+    },
+    {
+      "reference": "May 2027",
+      "date": "2027-06-25",
+      "et": "08:30"
+    },
+    {
+      "reference": "June 2027",
+      "date": "2027-07-29",
+      "et": "08:30"
+    },
+    {
+      "reference": "July 2027",
+      "date": "2027-08-25",
+      "et": "08:30"
+    },
+    {
+      "reference": "August 2027",
+      "date": "2027-09-30",
+      "et": "08:30"
+    },
+    {
+      "reference": "September 2027",
+      "date": "2027-10-28",
+      "et": "08:30"
+    },
+    {
+      "reference": "October 2027",
+      "date": "2027-11-24",
+      "et": "08:30"
+    },
+    {
+      "reference": "November 2027",
+      "date": "2027-12-22",
+      "et": "08:30"
+    }
+  ]
+}

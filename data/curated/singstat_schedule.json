@@ -1,5 +1,5 @@
 {
-  "_comment": "SingStat returns 403 to cloud runners, so this copy of its Advance Release Calendar backs up the live read. Refresh it from a normal connection with: python scripts/feeds.py --refresh-singstat",
+  "_comment": "SingStat returns 403 to cloud runners, so this copy of its Advance Release Calendar backs up the live read. Refresh it from a normal connection with: python scripts/feeds.py --refresh-schedules",
   "verified": "2026-11-01",
   "source": "https://www.singstat.gov.sg/data-tools-services/advance-release-calendar",
   "events": [

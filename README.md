@@ -13,16 +13,20 @@ fetches the feeds about every 15 minutes, so no API key or third-party request e
 | SGS 2Y, 10Y | MAS benchmark prices and yields | Falls back to SingStat M700071 month-end prints, labelled Monthly |
 | FX, commodities, equities, VIX | Yahoo Finance chart endpoint | Unofficial and exchange-delayed. FRED's keyless CSV is the fallback where a series exists |
 | Central banks | Fed, ECB, BoJ and MAS statements, ChinaMoney LPR | Parsed from the official documents on every run |
-| Calendar | Fed, MAS and SingStat release calendars, BLS schedule | BLS blocks scripted access, see below |
+| Calendar | Fed, ECB, MAS, SingStat, BEA and Eurostat calendars, BLS schedule | BLS blocks scripted access, see below |
 
 Rules enforced in `scripts/feeds.py`: a value only comes from a parsed response, and a failed feed keeps its last
 good value for at most 7 days, marked stale, then becomes a labelled empty state. A market-implied Fed path is left
 out because no free public source publishes one.
 
-**Two manual files.** `data/curated/bls_schedule.json` holds the US CPI and NFP dates, copied from the BLS schedule
-pages and running to December 2027. Update it and its `verified` date if BLS revises the calendar.
-`data/curated/singstat_schedule.json` backs up the SingStat calendar, which returns 403 to cloud runners. Refresh it
-from a normal connection with `python scripts/feeds.py --refresh-singstat`.
+**Manual files.** `data/curated/bls_schedule.json` holds the US CPI and NFP dates, copied from the BLS schedule pages
+and running to December 2027. Update it and its `verified` date if BLS revises the calendar.
+`data/curated/singstat_schedule.json` and `bea_schedule.json` back up those two calendars for when they refuse cloud
+runners. Refresh both from a normal connection with `python scripts/feeds.py --refresh-schedules`.
+
+**Euro area HICP times.** Eurostat's calendar feed stamps every entry 11:00 and all-day, so that hour is not a real
+release time and is not shown. The time on those rows is from the ECB calendar and applies to its seasonally adjusted
+series.
 
 ## Research
 

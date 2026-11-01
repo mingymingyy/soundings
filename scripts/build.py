@@ -261,9 +261,10 @@ def banks_panel(idx: int, banks: list[dict], today: dt.date, generated: str) -> 
         if nxt:
             prefix = "By " if nxt.get("nlt") else ""
             span = day_label(nxt["date"])
-            if nxt.get("start"):
+            if nxt.get("start") and nxt["start"] != nxt["date"]:
                 start = dt.date.fromisoformat(nxt["start"])
-                span = f"{start.day}–{span}"
+                same_month = start.month == dt.date.fromisoformat(nxt["date"]).month
+                span = f"{start.day}–{span}" if same_month else f"{start.day} {start:%b}–{span}"
             next_html = (
                 f'<span class="cb-date"><a href="{e(nxt["url"])}" rel="noopener" target="_blank">{prefix}{e(span)}</a></span>'
                 f'<small data-until="{e(nxt["date"])}">{e(days_until(nxt["date"], today))}</small><small>{e(nxt["label"])}</small>'
@@ -291,12 +292,20 @@ def calendar_panel(idx: int, events: list[dict], gaps: list[dict], today: dt.dat
         day = dt.date.fromisoformat(ev["date"])
         by = '<span class="by">By</span>' if ev.get("nlt") else ""
         lead = ""
-        if ev.get("start"):
-            lead = f'{dt.date.fromisoformat(ev["start"]).day}–'
-        time_html = ""
+        starts = ""
+        if ev.get("start") and ev["start"] != ev["date"]:
+            first = dt.date.fromisoformat(ev["start"])
+            if first.month == day.month:
+                lead = f"{first.day}–"
+            else:
+                starts = f"<small>Starts {first.day} {first:%b}</small>"
+        time_html = starts
         if ev.get("timeSgt"):
             sgt_day = dt.date.fromisoformat(ev["dateSgt"])
-            time_html = f'<small>{e(ev["timeSgt"])} SGT, {sgt_day.day} {sgt_day:%b}</small>'
+            time_html += f'<small>{e(ev["timeSgt"])} SGT, {sgt_day.day} {sgt_day:%b}</small>'
+        if ev.get("ecbTimeSgt"):
+            sgt_day = dt.date.fromisoformat(ev["ecbDateSgt"])
+            time_html += f'<small>ECB seasonally adjusted series <a href="{e(ev["ecbUrl"])}" rel="noopener" target="_blank">{e(ev["ecbTimeSgt"])} SGT, {sgt_day.day} {sgt_day:%b}</a></small>'
         items += (
             f'<li class="ev" data-date="{e(ev["date"])}">'
             f'<p class="ev-date">{by}<span class="ev-day">{lead}{day.day}</span><span class="ev-mon">{day:%b %Y}</span></p>'
@@ -315,9 +324,9 @@ def calendar_panel(idx: int, events: list[dict], gaps: list[dict], today: dt.dat
     sources = [{**s, "asOf": None} for s in names.values()]
     prov = "".join(f'<li><a href="{e(s["url"])}" rel="noopener" target="_blank">{e(s["name"])}</a></li>' for s in sources)
     extra = f"<p>BLS blocks automated access, so its dates are copied from its schedule pages, last verified <time>{e(day_label(verified))}</time>.</p>" if verified else ""
-    verified_sg = next((ev.get("verifiedSg") for ev in events if ev.get("verifiedSg")), None)
-    if verified_sg:
-        extra += f"<p>SingStat blocks this site's build server, so its dates come from a copy of its calendar, last verified <time>{e(day_label(verified_sg))}</time>.</p>"
+    copies = {ev["copy"]["name"]: ev["copy"]["verified"] for ev in events if ev.get("copy")}
+    for name, checked in copies.items():
+        extra += f"<p>{e(name)} blocks this site's build server, so its dates come from a copy of its calendar, last verified <time>{e(day_label(checked))}</time>.</p>"
     aside = f'<div class="prov"><h3>Source and data time</h3><ul>{prov}</ul>{extra}<p>Checked <time>{e(when(generated))}</time></p></div>'
     return panel(idx, "calendar", "Calendar", body, aside)
 

@@ -44,6 +44,11 @@ BOJ_SCHEDULE = "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
 LPR_JSON = "https://www.chinamoney.com.cn/r/cms/www/chinamoney/data/currency/bk-lpr.json"
 LPR_PAGE = "https://www.chinamoney.com.cn/english/bmklpr/"
 MAS_MPS_LIST = "https://www.mas.gov.sg/monetary-policy/past-monetary-policy-decisions"
+BEA_SCHEDULE = "https://www.bea.gov/news/schedule"
+BEA_NEXT_YEAR = "https://www.bea.gov/news/schedule/next-year"
+EUROSTAT_CALENDAR = "https://ec.europa.eu/eurostat/news/release-calendar"
+EUROSTAT_EVENTS = "https://ec.europa.eu/eurostat/o/calendars/eventsJson"
+ECB_HICP_CALENDAR = "https://www.ecb.europa.eu/press/calendars/statscal/ges/html/sthicp.en.html"
 
 
 class FeedError(Exception):
@@ -582,7 +587,13 @@ def fomc_dates() -> list[dict]:
 def ecb_dates() -> list[dict]:
     page = text_of(http(ECB_CALENDAR).decode("utf-8", "ignore"))
     pairs = re.findall(r"(\d{2})/(\d{2})/(\d{4}) Governing Council of the ECB: monetary policy meeting[^0-9]*?\(Day (\d)", page)
-    out = [{"date": f"{y}-{m}-{d}"} for d, m, y, day in pairs if day == "2"]
+    out = []
+    first_day = None
+    for d, m, y, day in pairs:
+        if day == "1":
+            first_day = f"{y}-{m}-{d}"
+        elif day == "2":
+            out.append({"date": f"{y}-{m}-{d}", "start": first_day or f"{y}-{m}-{d}"})
     if not out:
         raise FeedError("Could not parse the ECB calendar")
     return out
@@ -630,11 +641,81 @@ def singstat_arc() -> list[dict]:
     return sorted(unique.values(), key=lambda e: e["date"])
 
 
+def bea_pce() -> list[dict]:
+    """Personal Income and Outlays release dates, the release that carries the PCE price index."""
+    out = []
+    for url in (BEA_SCHEDULE, BEA_NEXT_YEAR):
+        page = text_of(http(url).decode("utf-8", "ignore"))
+        for month, day, clock, reference in re.findall(
+            r"([A-Z][a-z]+) (\d{1,2}) (\d{1,2}:\d{2} [AP]M) N ?ews Personal Income and Outlays, ([A-Z][a-z]+ \d{4})", page
+        ):
+            ref_month, ref_year = reference.split()
+            if month not in MONTHS or ref_month not in MONTHS:
+                continue
+            year = int(ref_year) + (1 if MONTHS[month] <= MONTHS[ref_month] else 0)
+            hour, minute = clock.split()[0].split(":")
+            hour_24 = int(hour) % 12 + (12 if clock.endswith("PM") else 0)
+            out.append({"reference": reference, "date": dt.date(year, MONTHS[month], int(day)).isoformat(), "et": f"{hour_24:02d}:{minute}"})
+    if not out:
+        raise FeedError("Could not parse the BEA release schedule")
+    return sorted({e["date"]: e for e in out}.values(), key=lambda e: e["date"])
+
+
+def _cet_offset(day: dt.date) -> int:
+    """UTC offset of Central European time: summer time runs from March's last Sunday to October's."""
+    last_sunday = lambda m: [d for d in cal.Calendar().itermonthdates(day.year, m) if d.month == m and d.weekday() == 6][-1]  # noqa: E731
+    return 2 if last_sunday(3) <= day < last_sunday(10) else 1
+
+
+def ecb_hicp() -> dict[str, dict]:
+    """ECB seasonally adjusted HICP release dates and times, keyed by date."""
+    page = text_of(http(ECB_HICP_CALENDAR).decode("utf-8", "ignore"))
+    out = {}
+    for d, m, y, clock, name, reference in re.findall(
+        r"(\d{2})/(\d{2})/(\d{4}) (\d{2}:\d{2}) Euro area seasonally adjusted HICP( flash estimate)? \(Dataset: HICP\) Reference period: ([A-Z][a-z]{2}-\d{4})", page
+    ):
+        day = dt.date(int(y), int(m), int(d))
+        hour, minute = clock.split(":")
+        release = dt.datetime(day.year, day.month, day.day, int(hour), int(minute), tzinfo=dt.timezone(dt.timedelta(hours=_cet_offset(day))))
+        sgt = release.astimezone(SGT)
+        out[day.isoformat()] = {"flash": bool(name), "reference": reference.replace("-", " "), "timeSgt": sgt.strftime("%H:%M"), "dateSgt": sgt.date().isoformat()}
+    if not out:
+        raise FeedError("Could not parse the ECB HICP calendar")
+    return out
+
+
+def eurostat_hicp(today: dt.date) -> list[dict]:
+    """Headline HICP dates. Eurostat stamps every calendar entry 11:00 and all-day, so only the date is usable."""
+    query = urllib.parse.urlencode({
+        "theme": 0, "category": 0, "keywords": "", "isEuroindicator": "", "authorInclude": "", "authorExclude": "",
+        "start": f"{today.isoformat()}T00:00:00+01:00",
+        "end": f"{(today + dt.timedelta(days=150)).isoformat()}T00:00:00+01:00",
+        "timeZone": "Europe/Luxembourg",
+    })
+    out = []
+    for entry in json.loads(http(f"{EUROSTAT_EVENTS}?{query}")):
+        title = entry.get("title", "").strip()
+        if title == "Flash estimate inflation euro area":
+            flash = True
+        elif title == "Inflation (HICP)":
+            flash = False
+        else:
+            continue
+        out.append({"flash": flash, "date": entry["start"][:10], "reference": entry.get("period", "")})
+    if not out:
+        raise FeedError("Eurostat calendar lists no HICP releases")
+    return out
+
+
 def _us_eastern_offset(day: dt.date) -> int:
     """UTC offset of US Eastern on a date: DST runs from March's 2nd Sunday to November's 1st."""
     second_sun_mar = [d for d in cal.Calendar().itermonthdates(day.year, 3) if d.month == 3 and d.weekday() == 6][1]
     first_sun_nov = [d for d in cal.Calendar().itermonthdates(day.year, 11) if d.month == 11 and d.weekday() == 6][0]
     return -4 if second_sun_mar <= day < first_sun_nov else -5
+
+
+def _snapshot(name: str) -> dict:
+    return json.loads((ROOT / "data" / "curated" / name).read_text(encoding="utf-8"))
 
 
 def bls_events(today: dt.date) -> list[dict]:
@@ -710,7 +791,7 @@ def bank_ecb(today) -> dict:
         "id": "ecb", "name": "European Central Bank", "short": "ECB",
         "rate": f"{rates.group(1)}%", "rateLabel": "Deposit facility",
         "last": {"date": _rss_date(latest["pubDate"]).isoformat(), "text": f"{decision.group(0).replace('The Governing Council today decided', 'Governing Council decided')} DFR {rates.group(1)}%, MRO {rates.group(2)}%, MLF {rates.group(3)}%.", "url": link},
-        "next": ({"date": nxt["date"], "label": "Monetary policy meeting, day 2", "url": ECB_CALENDAR} if nxt else None),
+        "next": ({"date": nxt["date"], "start": nxt["start"], "label": "Monetary policy meeting", "url": ECB_CALENDAR} if nxt else None),
         "source": {"name": "European Central Bank", "url": ECB_CALENDAR},
     }
 
@@ -831,20 +912,84 @@ def calendar_events(today, bank_list) -> tuple[list[dict], list[dict]]:
             events.append({"type": "MAS MPS", "title": f"MAS Monetary Policy Statement, {arc['edition']}", "date": arc["date"], "nlt": arc["nlt"], "source": {"name": "MAS release calendar", "url": MAS_ARC_URL}})
 
     def add_singstat():
-        verified = None
+        copy = {}
         try:
             release_dates = singstat_arc()
         except Exception:  # noqa: BLE001 - SingStat blocks cloud runners, so use the committed copy
-            snapshot = json.loads((ROOT / "data" / "curated" / "singstat_schedule.json").read_text(encoding="utf-8"))
-            release_dates, verified = snapshot["events"], snapshot["verified"]
+            snapshot = _snapshot("singstat_schedule.json")
+            release_dates, copy = snapshot["events"], {"copy": {"name": "SingStat", "verified": snapshot["verified"]}}
         for e in release_dates:
             if e["date"] >= today.isoformat():
-                events.append({**e, "source": {"name": "SingStat release calendar", "url": SINGSTAT_ARC_URL}, **({"verifiedSg": verified} if verified else {})})
+                events.append({**e, "source": {"name": "SingStat release calendar", "url": SINGSTAT_ARC_URL}, **copy})
+
+    def add_pce():
+        copy = {}
+        try:
+            releases = bea_pce()
+        except Exception:  # noqa: BLE001 - fall back to the committed copy of BEA's schedule
+            snapshot = _snapshot("bea_schedule.json")
+            releases, copy = snapshot["events"], {"copy": {"name": "BEA", "verified": snapshot["verified"]}}
+        for e in releases:
+            if e["date"] < today.isoformat():
+                continue
+            day = dt.date.fromisoformat(e["date"])
+            hour, minute = e["et"].split(":")
+            release = dt.datetime(day.year, day.month, day.day, int(hour), int(minute), tzinfo=dt.timezone(dt.timedelta(hours=_us_eastern_offset(day))))
+            sgt = release.astimezone(SGT)
+            events.append({
+                "type": "US PCE",
+                "title": f"PCE price index, in Personal Income and Outlays, {e['reference']}",
+                "date": e["date"],
+                "timeSgt": sgt.strftime("%H:%M"),
+                "dateSgt": sgt.date().isoformat(),
+                "source": {"name": "BEA release schedule", "url": BEA_SCHEDULE},
+                **copy,
+            })
+
+    def add_ecb_meetings():
+        for d in ecb_dates():
+            if d["date"] >= today.isoformat():
+                events.append({"type": "ECB", "title": "ECB monetary policy meeting", "date": d["date"], "start": d["start"], "source": {"name": "ECB Governing Council calendar", "url": ECB_CALENDAR}})
+
+    def add_hicp():
+        try:
+            ecb_times = ecb_hicp()
+        except Exception:  # noqa: BLE001 - the headline dates below still stand without the ECB times
+            ecb_times = {}
+        try:
+            headline = eurostat_hicp(today)
+        except Exception:  # noqa: BLE001 - the ECB series is published on the same days
+            if not ecb_times:
+                raise
+            for day, e in ecb_times.items():
+                if day >= today.isoformat():
+                    label = "flash estimate, " if e["flash"] else ""
+                    events.append({
+                        "type": "EA HICP flash" if e["flash"] else "EA HICP final",
+                        "title": f"Euro area seasonally adjusted HICP, {label}{e['reference']}",
+                        "date": day, "timeSgt": e["timeSgt"], "dateSgt": e["dateSgt"],
+                        "source": {"name": "ECB statistical calendar", "url": ECB_HICP_CALENDAR},
+                    })
+            return
+        for e in headline:
+            if e["date"] < today.isoformat():
+                continue
+            ecb = ecb_times.get(e["date"])
+            events.append({
+                "type": "EA HICP flash" if e["flash"] else "EA HICP final",
+                "title": f"Euro area HICP{' flash estimate' if e['flash'] else ''}, {e['reference']}",
+                "date": e["date"],
+                "source": {"name": "Eurostat release calendar", "url": EUROSTAT_CALENDAR},
+                **({"ecbTimeSgt": ecb["timeSgt"], "ecbDateSgt": ecb["dateSgt"], "ecbUrl": ECB_HICP_CALENDAR} if ecb else {}),
+            })
 
     attempt("FOMC", add_fomc)
     attempt("MAS MPS", add_mps)
     attempt("US CPI and NFP", lambda: events.extend(bls_events(today)))
     attempt("SG CPI and GDP", add_singstat)
+    attempt("US PCE", add_pce)
+    attempt("ECB meetings", add_ecb_meetings)
+    attempt("Euro area HICP", add_hicp)
 
     capped: list[dict] = []
     per_type: dict[str, int] = {}
@@ -931,10 +1076,11 @@ def collect(previous: dict | None = None) -> dict:
 
 
 if __name__ == "__main__":
-    if "--refresh-singstat" in sys.argv:
-        target = ROOT / "data" / "curated" / "singstat_schedule.json"
-        current = json.loads(target.read_text(encoding="utf-8"))
-        current.update(events=singstat_arc(), verified=dt.datetime.now(SGT).date().isoformat())
-        target.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    if "--refresh-schedules" in sys.argv:
+        for name, fetch in (("singstat_schedule.json", singstat_arc), ("bea_schedule.json", bea_pce)):
+            target = ROOT / "data" / "curated" / name
+            current = json.loads(target.read_text(encoding="utf-8"))
+            current.update(events=fetch(), verified=dt.datetime.now(SGT).date().isoformat())
+            target.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
     else:
         json.dump(collect(), sys.stdout, indent=1)
