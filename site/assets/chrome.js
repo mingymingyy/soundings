@@ -1,4 +1,4 @@
-// Runs before first paint: theme, plus the hooks shared by both pages.
+// Runs before first paint: theme, plus the hooks shared by every page.
 (function () {
   var root = document.documentElement;
   var saved = null;

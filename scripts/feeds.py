@@ -503,7 +503,7 @@ def rates_rows() -> tuple[list[dict], dict | None]:
         rows["fftarget"] = make_row(
             meta["fftarget"], fed["obs"], SRC_FED, date_as_of(fed["effective"]),
             display=f"{fed['lo']:.2f}–{fed['hi']:.2f}%",
-            note=f"Range in effect since {fed['effective'].isoformat()}",
+            note=f"Range in effect since {fed['effective'].day} {fed['effective']:%b %Y}",
         )
     except Exception as exc:  # noqa: BLE001
         rows["fftarget"] = empty_row(meta["fftarget"], f"Federal Reserve page failed: {exc}", SRC_FED)

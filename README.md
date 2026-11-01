@@ -55,4 +55,8 @@ python scripts/build.py
 python -m http.server 8123 --directory _site
 ```
 
+**About page.** Edit `data/about.json`. LinkedIn and email appear once they are filled in.
+
+**PDF viewer.** `site/assets/vendor/` holds PDF.js 4.10.38 (Apache 2.0), loaded only when a report opens. Covers are rendered at build time with PyMuPDF.
+
 `scripts/make_assets.py` regenerates the favicon, icons and OG image. It is not part of the build and needs Pillow.

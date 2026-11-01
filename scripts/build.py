@@ -26,6 +26,8 @@ DESCRIPTION = (
     "Rates, FX, commodities, equities, central banks and the macro calendar on one live page, "
     "with SGT timestamps and a named public source on every panel."
 )
+COVER_WIDTH = 480
+PANELS = [("rates", "Rates"), ("fx", "FX"), ("commodities", "Commodities"), ("equities", "Equities and volatility"), ("banks", "Central banks"), ("calendar", "Calendar")]
 e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
 
 LOGO = (
@@ -40,8 +42,7 @@ def when(stamp: str | None, with_year: bool = True) -> str:
     """Readable SGT time. A date-only stamp stays a date: the source gave no time of day."""
     if not stamp:
         return "time not published"
-    fmt_day = "%-d %b %Y" if with_year else "%-d %b"
-    fmt_day = fmt_day.replace("%-d", "{d}")
+    fmt_day = "{d} %b %Y" if with_year else "{d} %b"
     if len(stamp) == 10:
         day = dt.date.fromisoformat(stamp)
         return day.strftime(fmt_day).format(d=day.day)
@@ -66,7 +67,7 @@ def head(title: str, description: str, path: str, prefix: str, robots: str, extr
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; worker-src 'self' blob:; font-src 'self' data:; connect-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>{e(title)}</title>
 <meta name="description" content="{e(description)}">
@@ -102,29 +103,38 @@ def head(title: str, description: str, path: str, prefix: str, robots: str, extr
 def header(generated: str | None, prefix: str, active: str) -> str:
     stamp = ""
     if generated:
-        stamp = f"""<p class="stamp" id="stamp"><span class="stamp-k">Last updated</span> <time id="updated" datetime="{e(generated)}">{e(when(generated))}</time></p>"""
-    sections = [("rates", "Rates"), ("fx", "FX"), ("commodities", "Commodities"), ("equities", "Equities and volatility"), ("banks", "Central banks"), ("calendar", "Calendar")]
-    links = "".join(
-        f'<li><a href="{prefix}#{sid}"><span class="idx">{i:02d}</span>{e(label)}</a></li>' for i, (sid, label) in enumerate(sections, 1)
+        moment = when(generated)
+        clock, _, date = moment.partition(", ")
+        stamp = (
+            f'<p class="stamp" id="stamp"><span class="stamp-k">Last updated</span> '
+            f'<time id="updated" datetime="{e(generated)}"><span class="stamp-time">{e(clock)}</span><span class="stamp-date">, {e(date)}</span></time>'
+            f'<span class="stamp-note" id="stamp-note" role="status"></span></p>'
+        )
+    pages = [("dashboard", "Dashboard", prefix or "./"), ("research", "Research", f"{prefix}research/"), ("about", "About", f"{prefix}about/")]
+    nav = "".join(
+        f'<li><a href="{e(href)}"{" aria-current=" + chr(34) + "page" + chr(34) if key == active else ""}>{label}</a></li>' for key, label, href in pages
+    )
+    panel_links = "".join(
+        f'<li><a href="{prefix}#{sid}"><span class="idx">{i:02d}</span>{e(label)}</a></li>' for i, (sid, label) in enumerate(PANELS, 1)
     )
     return f"""<a class="skip" href="#main">Skip to content</a>
 <div class="progress" aria-hidden="true"><span id="progress"></span></div>
 <header class="bar">
   <a class="brand" href="{prefix or './'}" aria-label="Soundings, dashboard home">{LOGO}<span class="word">Soundings<small>Global macro, Singapore</small></span></a>
   {stamp}
+  <nav class="top-nav" aria-label="Main"><ul>{nav}</ul></nav>
   <div class="bar-actions">
-    <a class="bar-link" href="{prefix}{'research/' if active != 'research' else '#main'}"{' aria-current="page"' if active == 'research' else ''}>Research</a>
     <button class="icon-btn" id="theme" type="button" aria-pressed="false" aria-label="Switch to light theme"><span class="theme-dot" aria-hidden="true"></span></button>
-    <button class="menu-btn" id="menu-open" type="button" aria-haspopup="dialog" aria-controls="menu">Menu<span class="menu-lines" aria-hidden="true"></span></button>
+    <button class="menu-btn" id="menu-open" type="button" aria-haspopup="dialog" aria-controls="menu" aria-label="Open menu"><span class="menu-lines" aria-hidden="true"></span></button>
   </div>
 </header>
 <dialog class="menu" id="menu" aria-label="Site menu">
   <div class="menu-top">
-    <span class="word word-lg">Soundings</span>
-    <button class="menu-btn" id="menu-close" type="button">Close<span class="menu-lines is-x" aria-hidden="true"></span></button>
+    <span class="word">Soundings</span>
+    <button class="btn ghost" id="menu-close" type="button">Close</button>
   </div>
-  <nav aria-label="Dashboard panels"><ol class="menu-list">{links}</ol></nav>
-  <p class="menu-foot"><a href="{prefix}research/">Research ledger</a></p>
+  <nav aria-label="Pages"><ul class="menu-pages">{nav}</ul></nav>
+  <nav aria-label="Dashboard panels"><ol class="menu-list">{panel_links}</ol></nav>
 </dialog>
 """
 
@@ -149,7 +159,8 @@ def footer(prefix: str) -> str:
       <h2>Go to</h2>
       <ul>
         <li><a href="{prefix or './'}">Dashboard</a></li>
-        <li><a href="{prefix}research/">Research ledger</a></li>
+        <li><a href="{prefix}research/">Research</a></li>
+        <li><a href="{prefix}about/">About</a></li>
         <li><a href="{prefix}data/market.json">Raw data as JSON</a></li>
       </ul>
     </div>
@@ -159,12 +170,21 @@ def footer(prefix: str) -> str:
 """
 
 
+def freshness_attrs(row: dict) -> str:
+    """What the page needs to flag a series that is older than its expected update frequency."""
+    if row["id"] == "fftarget" or row.get("status") == "empty":
+        return ""  # a policy rate holds until the next decision, so an old date is not late
+    expect = "monthly" if row.get("freq") == "monthly" else "daily"
+    return f' data-obs="{e(row["lastObs"])}" data-expect="{expect}"'
+
+
 def change_cell(change: dict, label: str, full: str, freq: str) -> str:
+    period = f'<span class="l" aria-hidden="true">{label}</span>'
     if change["d"] == "na":
         why = "not available" + (" for a monthly series" if freq == "monthly" else "")
-        return f'<td class="chg na" data-l="{label}"><span title="{why}" aria-label="{full}: {why}">n/a</span></td>'
+        return f'<td class="chg na">{period}<span class="v" title="{why}"><span class="sr">{full}: </span>n/a</span></td>'
     ref = f' title="Against {e(day_label(change["ref"]))}"' if change.get("ref") else ""
-    return f'<td class="chg {change["d"]}" data-l="{label}"{ref}><span class="sr">{full}: </span>{e(change["t"])}</td>'
+    return f'<td class="chg {change["d"]}"{ref}>{period}<span class="v"><span class="sr">{full}: </span>{e(change["t"])}</span></td>'
 
 
 def sparkline(row: dict) -> str:
@@ -193,7 +213,7 @@ def table_row(row: dict) -> str:
     if status == "stale" and row.get("reason"):
         note = row["reason"]
     note_html = f'<small class="note">{e(note)}</small>' if note else ""
-    name = f'<th scope="row"><span class="s-name">{e(row["label"])}</span><small>{e(row["sub"])}</small>{tag}{note_html}</th>'
+    name = f'<th scope="row"><span class="s-name">{e(row["label"])}</span><small>{e(row["sub"])}</small><span class="late-slot"></span>{tag}{note_html}</th>'
     if status == "empty":
         return (
             f'<tr id="row-{e(row["id"])}" class="is-empty" data-status="empty">{name}'
@@ -205,7 +225,7 @@ def table_row(row: dict) -> str:
     if not row["display"].count("–"):
         number = f' data-num="{row["value"]}" data-dp="{row["dp"]}" data-suffix="{e(row.get("suffix", ""))}"'
     return (
-        f'<tr id="row-{e(row["id"])}" data-status="{status}">{name}'
+        f'<tr id="row-{e(row["id"])}" data-status="{status}"{freshness_attrs(row)}>{name}'
         f'<td class="val"{number}>{e(row["display"])}</td>'
         f'{change_cell(change["d1"], "1D", "One day change", row["freq"])}'
         f'{change_cell(change["w1"], "1W", "One week change", row["freq"])}'
@@ -216,34 +236,36 @@ def table_row(row: dict) -> str:
 
 def provenance(sources: list[dict], generated: str) -> str:
     items = "".join(
-        f'<li><a href="{e(s["url"])}" rel="noopener" target="_blank">{e(s["name"])}</a> <time>{e(when(s.get("asOf")))}</time></li>'
+        f'<li><a href="{e(s["url"])}" rel="noopener" target="_blank">{e(s["name"])}</a>'
+        + (f' <time>{e(when(s["asOf"]))}</time>' if s.get("asOf") else "")
+        + "</li>"
         for s in sources
     )
     items = items or "<li>No source responded on this run.</li>"
-    return f'<div class="prov"><h3>Source and data time</h3><ul>{items}</ul><p>Checked <time>{e(when(generated))}</time></p></div>'
+    return f'<div class="prov"><h3 class="sr">Source and data time</h3><ul>{items}</ul><p>Checked <time>{e(when(generated))}</time></p></div>'
 
 
-def panel(idx: int, pid: str, title: str, body: str, sources: str, aside: str = "") -> str:
-    return f"""<section class="panel reveal" id="{pid}" aria-labelledby="{pid}-h">
+def panel(idx: int, pid: str, title: str, body: str, sources: str) -> str:
+    is_open = " open" if pid == "rates" else ""
+    return f"""<section class="panel reveal{is_open}" id="{pid}" aria-labelledby="{pid}-h">
   <div class="side">
-    <p class="idx">{idx:02d}</p>
-    <h2 id="{pid}-h">{e(title)}</h2>
-    {aside}
+    <p class="idx" aria-hidden="true">{idx:02d}</p>
+    <h2 id="{pid}-h"><button class="toggle" type="button" aria-expanded="{'true' if is_open else 'false'}" aria-controls="{pid}-body"><span>{e(title)}</span><span class="chev" aria-hidden="true"></span></button></h2>
     {sources}
-    <div class="linked" data-panel="{pid}"></div>
+    <div class="linked" data-panel="{pid}"><span class="skeleton sk-line"></span></div>
   </div>
-  <div class="main">{body}</div>
+  <div class="main" id="{pid}-body">{body}</div>
 </section>
 """
 
 
-def market_panel(idx: int, pid: str, data: dict, generated: str) -> str:
+def market_panel(idx: int, pid: str, data: dict, generated: str, curve: str = "") -> str:
     rows = "".join(table_row(r) for r in data["rows"])
     body = f"""<table class="tbl" data-swap>
   <caption class="sr">{e(data['title'])}: last value, change over one day, one week and one month, and a three month trend</caption>
   <thead><tr><th scope="col">Series</th><th scope="col" class="r">Last</th><th scope="col" class="r">1D</th><th scope="col" class="r">1W</th><th scope="col" class="r">1M</th><th scope="col" class="r">3M trend</th></tr></thead>
   <tbody>{rows}</tbody>
-</table>"""
+</table>{curve}"""
     return panel(idx, pid, data["title"], body, provenance(data["sources"], generated))
 
 
@@ -273,13 +295,13 @@ def banks_panel(idx: int, banks: list[dict], today: dt.date, generated: str) -> 
             next_html = '<span class="nodata"><strong>Not published</strong></span>'
         rows += (
             f'<tr data-status="{b["status"]}"><th scope="row"><span class="s-name">{e(b["short"])}</span><small>{e(b["name"])}</small>{stale}</th>'
-            f'<td class="cb-rate" data-l="Policy"><span class="cb-val">{e(b["rate"])}</span><small>{e(b["rateLabel"])}</small></td>'
-            f'<td class="cb-last" data-l="Last decision"><span class="cb-date"><a href="{e(b["last"]["url"])}" rel="noopener" target="_blank">{e(day_label(b["last"]["date"]))}</a></span><small class="cb-text">{e(b["last"]["text"])}</small></td>'
-            f'<td class="cb-next" data-l="Next">{next_html}</td></tr>'
+            f'<td class="cb-rate"><span class="cb-val">{e(b["rate"])}</span><small>{e(b["rateLabel"])}</small></td>'
+            f'<td class="cb-last"><span class="l" aria-hidden="true">Last decision</span><span class="cb-date"><a href="{e(b["last"]["url"])}" rel="noopener" target="_blank">{e(day_label(b["last"]["date"]))}</a></span><small class="cb-text">{e(b["last"]["text"])}</small></td>'
+            f'<td class="cb-next"><span class="l" aria-hidden="true">Next</span>{next_html}</td></tr>'
         )
     body = f"""<table class="tbl tbl-cb" data-swap>
   <caption class="sr">Central bank tracker: policy setting, last decision and next meeting</caption>
-  <thead><tr><th scope="col">Bank</th><th scope="col">Policy</th><th scope="col">Last decision</th><th scope="col">Next</th></tr></thead>
+  <thead><tr><th scope="col">Bank</th><th scope="col" class="r">Policy</th><th scope="col">Last decision</th><th scope="col">Next</th></tr></thead>
   <tbody>{rows}</tbody>
 </table>"""
     sources = [{**b["source"], "asOf": b.get("last", {}).get("date")} for b in banks if b["status"] != "empty"]
@@ -292,60 +314,63 @@ def calendar_panel(idx: int, events: list[dict], gaps: list[dict], today: dt.dat
         day = dt.date.fromisoformat(ev["date"])
         by = '<span class="by">By</span>' if ev.get("nlt") else ""
         lead = ""
-        starts = ""
+        extras = []
         if ev.get("start") and ev["start"] != ev["date"]:
             first = dt.date.fromisoformat(ev["start"])
             if first.month == day.month:
                 lead = f"{first.day}–"
             else:
-                starts = f"<small>Starts {first.day} {first:%b}</small>"
-        time_html = starts
+                extras.append(f"Starts {first.day} {first:%b}")
         if ev.get("timeSgt"):
             sgt_day = dt.date.fromisoformat(ev["dateSgt"])
-            time_html += f'<small>{e(ev["timeSgt"])} SGT, {sgt_day.day} {sgt_day:%b}</small>'
+            extras.append(f'{ev["timeSgt"]} SGT' + ("" if sgt_day == day else f", {sgt_day.day} {sgt_day:%b}"))
+        ecb_note = ""
         if ev.get("ecbTimeSgt"):
             sgt_day = dt.date.fromisoformat(ev["ecbDateSgt"])
-            time_html += f'<small>ECB seasonally adjusted series <a href="{e(ev["ecbUrl"])}" rel="noopener" target="_blank">{e(ev["ecbTimeSgt"])} SGT, {sgt_day.day} {sgt_day:%b}</a></small>'
+            stamp = f'{ev["ecbTimeSgt"]} SGT' + ("" if sgt_day == day else f", {sgt_day.day} {sgt_day:%b}")
+            ecb_note = f'<small>ECB seasonally adjusted series: <a href="{e(ev["ecbUrl"])}" rel="noopener" target="_blank">{e(stamp)}</a></small>'
+        sub = f'<small>{e(" · ".join(extras))}</small>' if extras else ""
         items += (
             f'<li class="ev" data-date="{e(ev["date"])}">'
             f'<p class="ev-date">{by}<span class="ev-day">{lead}{day.day}</span><span class="ev-mon">{day:%b %Y}</span></p>'
-            f'<div class="ev-body"><p class="ev-type" data-type="{e(ev["type"])}">{e(ev["type"])}</p><p class="ev-title">{e(ev["title"])}</p>{time_html}</div>'
+            f'<div class="ev-body"><p class="ev-type">{e(ev["type"])}</p><p class="ev-title">{e(ev["title"])}</p>{sub}{ecb_note}</div>'
             f'<p class="ev-meta"><small data-until="{e(ev["date"])}">{e(days_until(ev["date"], today))}</small>'
             f'<a href="{e(ev["source"]["url"])}" rel="noopener" target="_blank">{e(ev["source"]["name"])}</a></p></li>'
         )
     if not items:
         items = '<li class="nodata"><strong>No data</strong> <span>No official release dates could be read on this run.</span></li>'
     gap_html = "".join(f'<p class="nodata"><strong>{e(g["type"])} unavailable</strong> <span>{e(g["reason"])}.</span></p>' for g in gaps)
-    body = f'<div data-swap>{gap_html}<ol class="events">{items}</ol></div>'
     verified = next((ev.get("verified") for ev in events if ev.get("verified")), None)
+    notes = ""
+    if verified:
+        notes += f"<li>BLS blocks automated access, so its dates are copied from its schedule pages, last verified <time>{e(day_label(verified))}</time>.</li>"
+    copies = {ev["copy"]["name"]: ev["copy"]["verified"] for ev in events if ev.get("copy")}
+    for name, checked in copies.items():
+        notes += f"<li>{e(name)} blocks this site's build server, so its dates come from a copy of its calendar, last verified <time>{e(day_label(checked))}</time>.</li>"
+    notes_html = f'<ul class="cal-notes">{notes}</ul>' if notes else ""
+    body = f'<div data-swap>{gap_html}<ol class="events">{items}</ol>{notes_html}</div>'
     names = {}
     for ev in events:
         names.setdefault(ev["source"]["name"], ev["source"])
     sources = [{**s, "asOf": None} for s in names.values()]
-    prov = "".join(f'<li><a href="{e(s["url"])}" rel="noopener" target="_blank">{e(s["name"])}</a></li>' for s in sources)
-    extra = f"<p>BLS blocks automated access, so its dates are copied from its schedule pages, last verified <time>{e(day_label(verified))}</time>.</p>" if verified else ""
-    copies = {ev["copy"]["name"]: ev["copy"]["verified"] for ev in events if ev.get("copy")}
-    for name, checked in copies.items():
-        extra += f"<p>{e(name)} blocks this site's build server, so its dates come from a copy of its calendar, last verified <time>{e(day_label(checked))}</time>.</p>"
-    aside = f'<div class="prov"><h3>Source and data time</h3><ul>{prov}</ul>{extra}<p>Checked <time>{e(when(generated))}</time></p></div>'
-    return panel(idx, "calendar", "Calendar", body, aside)
+    return panel(idx, "calendar", "Calendar", body, provenance(sources, generated))
 
 
-def curve_figure(curve: dict | None) -> str:
+def curve_figure(curve: dict | None, css_class: str = "", gradient: str = "seabed") -> str:
     if not curve or not curve.get("points"):
         return (
-            '<figure class="curve curve-empty"><figcaption class="nodata"><strong>No data</strong> '
+            f'<figure class="curve curve-empty {css_class}"><figcaption class="nodata"><strong>No data</strong> '
             "<span>The US Treasury curve could not be fetched on this run.</span></figcaption></figure>"
         )
     pts = curve["points"]
-    width, height, left, right, top, base = 760, 300, 18, 34, 34, 244
+    width, height, left, right, top, base = 760, 232, 18, 34, 30, 192
     low = min(v for _, v in pts)
     high = max(v for _, v in pts)
     span = (high - low) or 1
     step = (width - left - right) / (len(pts) - 1)
     xy = [(round(left + i * step, 1), round(base - (v - low) / span * (base - top), 1)) for i, (_, v) in enumerate(pts)]
     line = "M" + " ".join(f"{x} {y}" for x, y in xy)
-    fill = f"{line} L{xy[-1][0]} {height} L{xy[0][0]} {height} Z"
+    fill = f"{line} L{xy[-1][0]} {height - 24} L{xy[0][0]} {height - 24} Z"
     marks = ""
     for (tenor, value), (x, y) in zip(pts, xy):
         marks += f'<line class="depth" x1="{x}" x2="{x}" y1="{y}" y2="{height - 24}" />'
@@ -356,11 +381,11 @@ def curve_figure(curve: dict | None) -> str:
         marks += f'<circle class="node" cx="{x}" cy="{y}" r="3.5" />'
         marks += f'<rect class="hit" x="{x - step / 2}" y="0" width="{step}" height="{height}" data-tip="{e(tenor)}: {value:.2f}%"><title>{e(tenor)}: {value:.2f}%</title></rect>'
     summary = ", ".join(f"{t} {v:.2f}%" for t, v in pts)
-    return f"""<figure class="curve">
+    return f"""<figure class="curve {css_class}">
   <svg viewBox="0 0 {width} {height}" role="img" aria-label="US Treasury par yield curve on {e(day_label(curve['date']))}: {e(summary)}">
-    <defs><linearGradient id="seabed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--seabed)" stop-opacity=".55"/><stop offset="1" stop-color="var(--seabed)" stop-opacity="0"/></linearGradient></defs>
-    <path class="bed" d="{fill}" fill="url(#seabed)"/>
-    <path class="line" pathLength="1" d="{line}"/>
+    <defs><linearGradient id="{gradient}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="bed-a"/><stop offset="1" class="bed-b"/></linearGradient></defs>
+    <path class="bed" d="{fill}" fill="url(#{gradient})"/>
+    <path class="line" d="{line}"/>
     {marks}
   </svg>
   <figcaption>US Treasury par curve, % yield. <time>{e(day_label(curve['date']))}</time>. Source: <a href="{e(curve['source']['url'])}" rel="noopener" target="_blank">{e(curve['source']['name'])}</a></figcaption>
@@ -370,7 +395,7 @@ def curve_figure(curve: dict | None) -> str:
 def tape(panels: dict) -> str:
     rows = {r["id"]: r for p in panels.values() for r in p["rows"]}
     tiles = ""
-    for rid in ("us10y", "us2s10s", "usdsgd", "brent", "spx", "vix"):
+    for rid in ("us10y", "dxy", "usdsgd", "brent", "spx", "vix"):
         row = rows.get(rid)
         if not row:
             continue
@@ -379,9 +404,9 @@ def tape(panels: dict) -> str:
             continue
         one = row["change"]["d1"]
         tiles += (
-            f'<li class="tile" data-tile="{rid}"><a href="#row-{rid}"><span class="t-name">{e(row["label"])}</span>'
+            f'<li class="tile" data-tile="{rid}"{freshness_attrs(row)}><a href="#row-{rid}"><span class="t-name">{e(row["label"])}<span class="late-slot"></span></span>'
             f'<span class="t-val" data-num="{row["value"]}" data-dp="{row["dp"]}" data-suffix="{e(row.get("suffix", ""))}">{e(row["display"])}</span>'
-            f'<span class="t-chg chg {one["d"]}"><span class="sr">One day change: </span>{e(one["t"])}</span></a></li>'
+            f'<span class="chg t-chg {one["d"]}"><span class="v"><span class="sr">One day change: </span>{e(one["t"])}</span></span></a></li>'
         )
     return f'<ul class="tape" aria-label="Key readings, change over one day">{tiles}</ul>'
 
@@ -404,6 +429,7 @@ def render_dashboard(data: dict) -> str:
     today = dt.datetime.fromisoformat(gen.replace("Z", "+00:00")).astimezone(SGT).date()
     p = data["panels"]
     extra = '<script src="assets/dash.js" defer></script>\n' + jsonld()
+    jump = "".join(f'<li><a href="#{sid}">{e(label)}</a></li>' for sid, label in PANELS)
     return (
         head(TITLE, DESCRIPTION, "", "", "index,follow,max-image-preview:large", extra)
         + f'<body data-generated="{e(gen)}">\n'
@@ -416,11 +442,12 @@ def render_dashboard(data: dict) -> str:
       <h1 id="hero-h">The world's tape, <em>read from Singapore.</em></h1>
       <p>Rates, FX, commodities, equities, central banks and the release calendar. Every number carries its source and its time.</p>
     </div>
-    {curve_figure(data.get('curve'))}
+    {curve_figure(data.get('curve'), 'curve-hero', 'seabed')}
   </div>
+  <nav class="jump" aria-label="Dashboard panels"><ul>{jump}</ul></nav>
 </section>
 """
-        + market_panel(1, "rates", p["rates"], gen)
+        + market_panel(1, "rates", p["rates"], gen, curve_figure(data.get("curve"), "curve-inline", "seabed-m"))
         + market_panel(2, "fx", p["fx"], gen)
         + market_panel(3, "commodities", p["commodities"], gen)
         + market_panel(4, "equities", p["equities"], gen)
@@ -436,40 +463,49 @@ def render_research() -> str:
     extra = '<script src="../assets/markdown.js" defer></script>\n<script src="../assets/research.js" defer></script>\n'
     chips = "".join(f'<button type="button" class="chip" data-tag="{t}" aria-pressed="false">{t}<span class="count"></span></button>' for t in ("Rates", "FX", "Commodities", "Equities"))
     tags = "".join(f'<option>{t}</option>' for t in ("Rates", "FX", "Commodities", "Equities"))
-    panels = "".join(
-        f'<label class="check"><input type="checkbox" name="panels" value="{pid}"><span>{label}</span></label>'
-        for pid, label in (("rates", "Rates"), ("fx", "FX"), ("commodities", "Commodities"), ("equities", "Equities and volatility"), ("banks", "Central banks"), ("calendar", "Calendar"))
-    )
+    panels = "".join(f'<label class="check"><input type="checkbox" name="panels" value="{pid}"><span>{label}</span></label>' for pid, label in PANELS)
+    skeleton_rows = '<li class="row-skeleton" aria-hidden="true"><span class="skeleton sk-line"></span></li>' * 3
     return (
-        head("Research ledger | Soundings", "Private research notes.", "research/", "../", "noindex,nofollow", extra)
+        head("Research | Soundings", "Private research notes.", "research/", "../", "noindex,nofollow", extra)
         + "<body>\n"
         + header(None, "../", "research")
-        + f"""<main id="main" class="ledger">
-<section class="ledger-head">
-  <div>
-    <p class="idx">R</p>
-    <h1>Research ledger</h1>
-    <p class="lede">Notes and PDFs, tied to the panels they speak to. Edits save in this browser straight away. Export them to commit into the repo.</p>
-  </div>
-  <div class="ledger-actions">
-    <button type="button" class="btn primary" id="new-note">New note</button>
-    <button type="button" class="btn" id="export">Export</button>
-    <button type="button" class="btn" id="import">Import</button>
-    <input type="file" id="import-file" accept=".zip,.json,application/zip,application/json" hidden>
-  </div>
-</section>
-<p class="ledger-status" id="status" role="status"></p>
-<section class="ledger-controls" aria-label="Search and filter">
-  <label class="search"><span class="sr">Search notes</span><input type="search" id="search" placeholder="Search titles and text" autocomplete="off"></label>
-  <div class="chips" role="group" aria-label="Filter by asset class">
-    <button type="button" class="chip" data-tag="" aria-pressed="true">All<span class="count"></span></button>
-    {chips}
-  </div>
-</section>
-<section class="ledger-body">
-  <ol class="note-list" id="list" aria-label="Notes"></ol>
-  <article class="reader" id="reader" tabindex="-1" aria-live="polite"></article>
-</section>
+        + f"""<main id="main" class="research">
+<div id="library">
+  <header class="lib-head">
+    <div>
+      <h1 id="lib-h" tabindex="-1">Research</h1>
+      <p class="ledger-status" id="status" role="status">Loading reports</p>
+    </div>
+    <div class="lib-actions">
+      <button type="button" class="btn" id="new-note">New note</button>
+      <button type="button" class="btn" id="export">Export</button>
+      <button type="button" class="btn" id="import">Import</button>
+      <input type="file" id="import-file" accept=".zip,.json,application/zip,application/json" hidden>
+    </div>
+  </header>
+  <section class="latest" id="latest" aria-label="Latest issue">
+    <div class="latest-cover skeleton" aria-hidden="true"></div>
+    <div class="latest-copy" aria-hidden="true"><span class="skeleton sk-line sk-short"></span><span class="skeleton sk-title"></span><span class="skeleton sk-line"></span><span class="skeleton sk-line"></span></div>
+  </section>
+  <section class="archive" aria-labelledby="archive-h">
+    <div class="archive-controls">
+      <div class="controls-top">
+        <h2 id="archive-h">Archive</h2>
+        <p class="count-line" role="status"><span id="result-count"></span> <button type="button" class="link-btn" id="reset" hidden>Reset filters</button></p>
+      </div>
+      <div class="controls-row">
+        <label class="search"><span class="sr">Search reports</span><input type="search" id="search" placeholder="Search titles and text" autocomplete="off"></label>
+        <div class="chips" role="group" aria-label="Filter by asset class">
+          <button type="button" class="chip" data-tag="" aria-pressed="true">All<span class="count"></span></button>
+          {chips}
+        </div>
+      </div>
+    </div>
+    <div class="row-head" aria-hidden="true"><span>No.</span><span>Title</span><span>Date</span><span>Tag</span></div>
+    <ol class="note-list" id="list" aria-label="Reports">{skeleton_rows}</ol>
+  </section>
+</div>
+<article class="report" id="report" hidden></article>
 <dialog class="editor" id="editor" aria-labelledby="editor-h">
   <form id="editor-form" method="dialog" novalidate>
     <header class="editor-top">
@@ -478,9 +514,10 @@ def render_research() -> str:
     </header>
     <div class="editor-fields">
       <label class="field title-field"><span>Title</span><input name="title" required maxlength="160" autocomplete="off"></label>
-      <label class="field"><span>Date</span><input name="date" type="date" required></label>
+      <label class="field"><span>Date published</span><input name="date" type="date" required></label>
       <label class="field"><span>Asset class</span><select name="tag" required>{tags}</select></label>
     </div>
+    <label class="field"><span>Summary, shown on the library page</span><input name="summary" maxlength="400" autocomplete="off"></label>
     <fieldset class="field panels-field"><legend>Linked dashboard panels</legend><div class="checks">{panels}</div></fieldset>
     <div class="editor-split">
       <label class="field"><span>Text, in Markdown</span><textarea name="body" rows="14" spellcheck="true"></textarea></label>
@@ -503,6 +540,37 @@ def render_research() -> str:
   </form>
 </dialog>
 </main>
+<noscript><p class="noscript">The research library needs JavaScript to read reports.</p></noscript>
+"""
+        + footer("../")
+        + "</body>\n</html>\n"
+    )
+
+
+def render_about() -> str:
+    about = json.loads((ROOT / "data" / "about.json").read_text(encoding="utf-8"))
+    bio = "".join(f"<p>{e(par)}</p>" for par in about["bio"])
+    links = []
+    if about.get("linkedin"):
+        links.append(f'<li><a href="{e(about["linkedin"])}" rel="me noopener" target="_blank">LinkedIn</a></li>')
+    if about.get("email"):
+        links.append(f'<li><a href="mailto:{e(about["email"])}">{e(about["email"])}</a></li>')
+    contact = f'<h2>Contact</h2><ul class="about-links">{"".join(links)}</ul>' if links else ""
+    return (
+        head("About | Soundings", f"About {about['name']} and the Soundings macro dashboard.", "about/", "../", "index,follow")
+        + "<body>\n"
+        + header(None, "../", "about")
+        + f"""<main id="main" class="about">
+  <h1>About</h1>
+  <p class="about-name">{e(about['name'])}</p>
+  <div class="prose">{bio}</div>
+  {contact}
+  <h2>This site</h2>
+  <div class="prose">
+    <p>Soundings puts rates, FX, commodities, equities, central banks and the release calendar on one page. Every number names its public source and its time, and a feed that fails says so instead of showing a stand-in.</p>
+    <p>A sounding is a measured depth. <a href="../research/">Research</a> holds the written reports, and the <a href="../">dashboard</a> holds the readings behind them.</p>
+  </div>
+</main>
 """
         + footer("../")
         + "</body>\n</html>\n"
@@ -513,8 +581,34 @@ def render_404() -> str:
     return (
         head("Page not found | Soundings", "This page does not exist.", "404.html", "/soundings/", "noindex")
         + "<body>\n"
-        + '<main id="main" class="lost"><p class="idx">404</p><h1>No bottom at this depth.</h1><p><a href="/soundings/">Back to the dashboard</a></p></main>\n</body>\n</html>\n'
+        + '<main id="main" class="lost"><h1>No bottom at this depth.</h1><p><a href="/soundings/">Back to the dashboard</a></p></main>\n</body>\n</html>\n'
     )
+
+
+def make_covers(entries: list[dict]) -> None:
+    """Render page one of each report's first PDF, so the library never has to load a PDF to show a cover."""
+    try:
+        import pymupdf
+    except ImportError:
+        print("pymupdf is not installed, so reports get a text cover")
+        return
+    covers = OUT / "data" / "research" / "covers"
+    covers.mkdir(parents=True, exist_ok=True)
+    for entry in entries:
+        attachments = entry.get("attachments") or []
+        if not attachments:
+            continue
+        try:
+            with pymupdf.open(ROOT / "data" / "research" / attachments[0]["file"]) as doc:
+                page = doc[0]
+                zoom = COVER_WIDTH / page.rect.width
+                pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+                name = f'{entry["id"]}.jpg'
+                pix.save(covers / name, jpg_quality=72)
+                entry["cover"] = {"file": f"covers/{name}", "w": pix.width, "h": pix.height}
+                entry["pages"] = doc.page_count
+        except Exception as exc:  # noqa: BLE001 - a text cover is the fallback
+            print(f"no cover for {entry['id']}: {exc}")
 
 
 def previous_snapshot() -> dict | None:
@@ -541,13 +635,20 @@ def main() -> None:
             row.pop("spark", None)
     (OUT / "data" / "market.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     shutil.copytree(ROOT / "data" / "research", OUT / "data" / "research")
+    entries = json.loads((ROOT / "data" / "research" / "entries.json").read_text(encoding="utf-8"))
+    make_covers(entries)
+    (OUT / "data" / "research" / "entries.json").write_text(json.dumps(entries, ensure_ascii=False, indent=1), encoding="utf-8")
     (OUT / "research").mkdir(exist_ok=True)
     (OUT / "research" / "index.html").write_text(render_research(), encoding="utf-8")
+    (OUT / "about").mkdir(exist_ok=True)
+    (OUT / "about" / "index.html").write_text(render_about(), encoding="utf-8")
     (OUT / "404.html").write_text(render_404(), encoding="utf-8")
     (OUT / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n", encoding="utf-8")
     lastmod = data["generated"][:10]
     (OUT / "sitemap.xml").write_text(
-        f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>{SITE_URL}/</loc><lastmod>{lastmod}</lastmod><changefreq>hourly</changefreq></url></urlset>\n',
+        f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{SITE_URL}/</loc><lastmod>{lastmod}</lastmod><changefreq>hourly</changefreq></url>"
+        f"<url><loc>{SITE_URL}/about/</loc><lastmod>{lastmod}</lastmod></url></urlset>\n",
         encoding="utf-8",
     )
     (OUT / ".nojekyll").write_text("", encoding="utf-8")

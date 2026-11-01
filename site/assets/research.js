@@ -1,12 +1,15 @@
-// Research ledger: repo entries merged with this browser's edits (IndexedDB), PDFs, export and import.
+// Research library: repo entries merged with this browser's edits (IndexedDB), a report view with
+// a PDF.js viewer, and export and import.
 (function () {
   var TAGS = ['Rates', 'FX', 'Commodities', 'Equities'];
   var PANELS = { rates: 'Rates', fx: 'FX', commodities: 'Commodities', equities: 'Equities and volatility', banks: 'Central banks', calendar: 'Calendar' };
   var MAX_PDF = 50 * 1024 * 1024;
   var DATA_DIR = '../data/research/';
+  var PDFJS = '../assets/vendor/pdf.min.mjs';
+  var PDFJS_WORKER = new URL('../assets/vendor/pdf.worker.min.mjs', location.href).href;
   var $ = function (id) { return document.getElementById(id); };
 
-  var state = { repo: [], local: new Map(), notes: [], tag: '', query: '', current: null, editing: null, pendingFiles: [], kept: [], objectUrls: [], persistent: true };
+  var state = { repo: [], covers: {}, local: new Map(), notes: [], issues: {}, tag: '', query: '', editing: null, pendingFiles: [], kept: [], objectUrls: [], persistent: true, viewer: null };
   var memory = { notes: new Map(), files: new Map() };
   var dbPromise = null;
 
@@ -23,40 +26,42 @@
         if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
       };
       request.onerror = function () { resolve(null); };
+      request.onblocked = function () { resolve(null); };
       request.onsuccess = function () { resolve(request.result); };
     });
     return dbPromise;
   }
 
-  function txn(store, mode, work) {
+  // Each operation has a stored path and an in-memory path, for browsers that block IndexedDB.
+  function stored(store, mode, viaDb, viaMemory) {
     return openDb().then(function (db) {
-      if (!db) { state.persistent = false; return work(null); }
+      if (!db) { state.persistent = false; return viaMemory(); }
       return new Promise(function (resolve, reject) {
         var tx = db.transaction(store, mode);
-        var result = work(tx.objectStore(store));
-        tx.oncomplete = function () { resolve(result && 'result' in result ? result.result : result); };
+        var request = viaDb(tx.objectStore(store));
+        tx.oncomplete = function () { resolve(request ? request.result : undefined); };
         tx.onerror = tx.onabort = function () { reject(tx.error); };
       });
     });
   }
 
   function getLocalNotes() {
-    return txn('notes', 'readonly', function (s) { return s ? s.getAll() : { result: Array.from(memory.notes.values()) }; });
+    return stored('notes', 'readonly', function (s) { return s.getAll(); }, function () { return Array.from(memory.notes.values()); });
   }
   function putNote(note) {
-    return txn('notes', 'readwrite', function (s) { if (s) s.put(note); else memory.notes.set(note.id, note); });
+    return stored('notes', 'readwrite', function (s) { s.put(note); }, function () { memory.notes.set(note.id, note); });
   }
   function dropNote(id) {
-    return txn('notes', 'readwrite', function (s) { if (s) s.delete(id); else memory.notes.delete(id); });
+    return stored('notes', 'readwrite', function (s) { s.delete(id); }, function () { memory.notes.delete(id); });
   }
   function putFile(key, blob) {
-    return txn('files', 'readwrite', function (s) { if (s) s.put(blob, key); else memory.files.set(key, blob); });
+    return stored('files', 'readwrite', function (s) { s.put(blob, key); }, function () { memory.files.set(key, blob); });
   }
   function getFile(key) {
-    return txn('files', 'readonly', function (s) { return s ? s.get(key) : { result: memory.files.get(key) }; });
+    return stored('files', 'readonly', function (s) { return s.get(key); }, function () { return memory.files.get(key); });
   }
   function dropFile(key) {
-    return txn('files', 'readwrite', function (s) { if (s) s.delete(key); else memory.files.delete(key); });
+    return stored('files', 'readwrite', function (s) { s.delete(key); }, function () { memory.files.delete(key); });
   }
 
   // --- helpers ------------------------------------------------------------
@@ -89,7 +94,6 @@
   function newId(date, title) {
     return date + '-' + slug(title) + '-' + Math.random().toString(36).slice(2, 6);
   }
-  function setStatus(message) { renderStatus(message); }
   function download(blob, name) {
     var url = URL.createObjectURL(blob);
     var link = el('a', { href: url, download: name });
@@ -107,11 +111,17 @@
       date: note.date,
       title: note.title,
       tag: note.tag,
+      summary: typeof note.summary === 'string' ? note.summary : '',
       panels: (note.panels || []).filter(function (p) { return PANELS[p]; }),
       body: typeof note.body === 'string' ? note.body : '',
       attachments: (note.attachments || []).map(function (a) { return { name: String(a.name), file: String(a.file), size: Number(a.size) || 0 }; }),
       updated: note.updated || null
     };
+  }
+  function summaryOf(note) {
+    if (note.summary) return note.summary;
+    var first = String(note.body || '').split(/\n\s*\n/).find(function (block) { return block.trim() && !/^(#|\||>|-|\*|\d+\.)/.test(block.trim()); });
+    return first ? first.replace(/[*_`]/g, '').trim().slice(0, 320) : '';
   }
 
   // --- model --------------------------------------------------------------
@@ -123,22 +133,31 @@
     state.notes = Array.from(map.values()).sort(function (a, b) {
       return String(b.date).localeCompare(String(a.date)) || String(a.title).localeCompare(String(b.title));
     });
+    // Issue numbers run from the oldest report.
+    state.issues = {};
+    state.notes.slice().reverse().forEach(function (note, index) { state.issues[note.id] = index + 1; });
   }
   function isLocal(id) { return state.local.has(id); }
   function matches(note) {
     if (state.tag && note.tag !== state.tag) return false;
     if (!state.query) return true;
-    var hay = (note.title + ' ' + note.tag + ' ' + note.body + ' ' + (note.attachments || []).map(function (a) { return a.name; }).join(' ')).toLowerCase();
+    var hay = (note.title + ' ' + note.tag + ' ' + (note.summary || '') + ' ' + note.body + ' ' + (note.attachments || []).map(function (a) { return a.name; }).join(' ')).toLowerCase();
     return state.query.split(/\s+/).every(function (term) { return hay.indexOf(term) >= 0; });
   }
+  function currentId() {
+    return decodeURIComponent(location.hash.slice(1));
+  }
+  function currentNote() {
+    var id = currentId();
+    return state.notes.find(function (n) { return n.id === id; }) || null;
+  }
 
-  // --- rendering ----------------------------------------------------------
+  // --- library ------------------------------------------------------------
   function renderStatus(message) {
     var status = $('status');
     status.textContent = '';
-    var count = state.notes.length;
     var pending = state.local.size;
-    status.append(count + (count === 1 ? ' note.' : ' notes.'));
+    status.append('Notes and PDFs, tied to the dashboard panels they speak to.');
     if (pending) {
       status.append(' ');
       status.append(el('span', { class: 'pending', text: pending + (pending === 1 ? ' change' : ' changes') + ' saved only in this browser.' }));
@@ -146,6 +165,55 @@
     }
     if (!state.persistent) status.append(' This browser blocks local storage, so edits last until you close the tab. Export before leaving.');
     if (message) status.append(' ' + message);
+  }
+
+  function cover(note, eager) {
+    var box = el('div', { class: 'latest-cover' });
+    var info = state.covers[note.id];
+    if (info) {
+      box.append(el('img', {
+        src: DATA_DIR + info.file, alt: '', width: info.w, height: info.h,
+        loading: eager ? 'eager' : 'lazy', decoding: 'async'
+      }));
+    } else {
+      box.append(el('div', { class: 'text-cover' }, [
+        el('span', { text: note.title }),
+        el('small', { text: formatDate(note.date) })
+      ]));
+    }
+    return box;
+  }
+
+  function renderLatest() {
+    var box = $('latest');
+    box.textContent = '';
+    var note = state.notes[0];
+    if (!note) {
+      box.append(el('div', { class: 'empty-state' }, [
+        el('h2', { text: 'No research yet.' }),
+        el('p', { text: 'Write your first note, attach a PDF, and link it to the panels it speaks to. It will show up beside those panels on the dashboard.' }),
+        el('button', { type: 'button', class: 'btn primary', text: 'Write the first note', onclick: function () { openEditor(null); } })
+      ]));
+      return;
+    }
+    var meta = el('p', { class: 'meta-line' }, [
+      el('span', { text: 'Published ' + formatDate(note.date) }),
+      el('span', { class: 'badge', text: note.tag })
+    ]);
+    if (isLocal(note.id)) meta.append(el('span', { class: 'badge local', text: 'Local' }));
+    var summary = summaryOf(note);
+    box.append(
+      cover(note, true),
+      el('div', { class: 'latest-copy' }, [
+        el('div', { class: 'latest-title' }, [
+          el('p', { class: 'kicker', text: 'Latest issue, No. ' + state.issues[note.id] }),
+          el('h2', { text: note.title }),
+          meta
+        ]),
+        summary ? el('p', { class: 'latest-summary', text: summary }) : null,
+        el('a', { class: 'btn primary', href: '#' + encodeURIComponent(note.id), text: 'Read' })
+      ])
+    );
   }
 
   function renderChips() {
@@ -161,132 +229,320 @@
     var list = $('list');
     list.textContent = '';
     var shown = state.notes.filter(matches);
-    if (!shown.length && state.notes.length) {
-      list.append(el('li', { class: 'list-empty', text: 'No notes match this search and filter.' }));
+    var filtered = Boolean(state.tag || state.query);
+    $('result-count').textContent = shown.length + ' of ' + state.notes.length + (state.notes.length === 1 ? ' report' : ' reports');
+    $('reset').hidden = !filtered;
+    if (!shown.length) {
+      list.append(el('li', { class: 'list-empty', text: state.notes.length ? 'No reports match this search and filter.' : 'Reports you add will be listed here.' }));
     }
     shown.forEach(function (note) {
-      var meta = el('span', { class: 'n-meta' }, [formatDate(note.date) + '  ', el('span', { class: 'badge', text: note.tag })]);
-      if (isLocal(note.id)) { meta.append(' '); meta.append(el('span', { class: 'badge local', text: 'Local' })); }
-      if ((note.attachments || []).length) meta.append('  ' + note.attachments.length + ' PDF');
-      var button = el('button', {
-        type: 'button', class: 'note-btn', 'aria-current': String(note.id === state.current),
-        onclick: function () { select(note.id, true); }
-      }, [el('span', { class: 'n-title', text: note.title }), meta]);
-      list.append(el('li', {}, [button]));
+      var title = el('span', { class: 'n-title', text: note.title });
+      if (isLocal(note.id)) title.append(el('small', { text: 'Saved only in this browser' }));
+      list.append(el('li', {}, [
+        el('a', { class: 'note-btn', href: '#' + encodeURIComponent(note.id) }, [
+          el('span', { class: 'n-no', text: String(state.issues[note.id]) }),
+          title,
+          el('span', { class: 'n-date', text: formatDate(note.date) }),
+          el('span', { class: 'n-tag' }, [el('span', { class: 'badge', text: note.tag })])
+        ])
+      ]));
     });
   }
 
+  // --- report view --------------------------------------------------------
   function clearObjectUrls() {
     state.objectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
     state.objectUrls = [];
   }
 
-  async function attachmentUrl(file) {
+  async function attachmentSource(file) {
     var blob = await getFile(file);
     if (blob) {
       var url = URL.createObjectURL(blob);
       state.objectUrls.push(url);
-      return url;
+      return { url: url, blob: blob };
     }
-    return DATA_DIR + file;
+    return { url: DATA_DIR + file, blob: null };
   }
 
-  function renderEmpty() {
-    var reader = $('reader');
-    reader.textContent = '';
-    if (state.notes.length) {
-      reader.append(el('div', { class: 'empty-state' }, [
-        el('h2', { text: 'Choose a note.' }),
-        el('p', { text: 'Pick one from the list to read it and its attached PDFs.' })
-      ]));
-      return;
+  function closeViewer() {
+    if (state.viewer) {
+      state.viewer.dispose();
+      state.viewer = null;
     }
-    reader.append(el('div', { class: 'empty-state' }, [
-      el('h2', { text: 'No research yet.' }),
-      el('p', { text: 'Write your first note, attach a PDF, and link it to the panels it speaks to. It will show up beside those panels on the dashboard.' }),
-      el('button', { type: 'button', class: 'btn primary', text: 'Write the first note', onclick: function () { openEditor(null); } })
+  }
+
+  function viewerError(host, source, message) {
+    host.textContent = '';
+    host.append(el('div', { class: 'viewer-error', role: 'alert' }, [
+      el('strong', { text: 'This PDF could not be shown here.' }),
+      el('span', { text: message + ' ' }),
+      el('a', { href: source.url, target: '_blank', rel: 'noopener', text: 'Open it in a new tab' })
     ]));
   }
 
-  async function renderReader() {
+  // Pages render only when near the screen, and are released again once far away.
+  function mountViewer(host, counter, source) {
+    var disposed = false;
+    var doc = null;
+    var pages = [];
+    var observers = [];
+    var ratio = Math.SQRT2;
+
+    host.textContent = '';
+    var status = el('p', { role: 'status', text: 'Loading PDF' });
+    host.append(el('div', { class: 'viewer-state' }, [status, el('div', { class: 'skeleton sheet' })]));
+
+    function targetWidth() {
+      return host.clientWidth || 600;
+    }
+
+    async function draw(entry) {
+      if (entry.rendered || entry.task || disposed) return;
+      var page = await doc.getPage(entry.number);
+      if (disposed) return;
+      var base = page.getViewport({ scale: 1 });
+      var density = Math.min(window.devicePixelRatio || 1, 2);
+      // Render above screen density on small screens, so a pinch zoom stays sharp.
+      var pixels = Math.max(targetWidth() * density, 900);
+      var viewport = page.getViewport({ scale: pixels / base.width });
+      var canvas = el('canvas', { width: Math.floor(viewport.width), height: Math.floor(viewport.height), role: 'img', 'aria-label': 'Page ' + entry.number + ' of ' + doc.numPages });
+      entry.task = page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport });
+      try {
+        await entry.task.promise;
+        if (disposed) return;
+        entry.sheet.textContent = '';
+        entry.sheet.append(canvas);
+        entry.sheet.classList.remove('is-loading');
+        entry.rendered = true;
+      } catch (err) {
+        if (err && err.name !== 'RenderingCancelledException') entry.sheet.classList.remove('is-loading');
+      } finally {
+        entry.task = null;
+      }
+    }
+
+    function release(entry) {
+      if (entry.task) { entry.task.cancel(); entry.task = null; }
+      if (entry.rendered) {
+        entry.sheet.textContent = '';
+        entry.sheet.classList.add('is-loading');
+        entry.rendered = false;
+      }
+    }
+
+    (async function start() {
+      try {
+        var pdfjs = await import(PDFJS);
+        if (disposed) return;
+        pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+        var options = { isEvalSupported: false, disableFontFace: false };
+        if (source.blob) options.data = new Uint8Array(await source.blob.arrayBuffer());
+        else options.url = source.url;
+        var task = pdfjs.getDocument(options);
+        task.onProgress = function (progress) {
+          if (progress.total) status.textContent = 'Loading PDF, ' + Math.min(100, Math.round((progress.loaded / progress.total) * 100)) + '%';
+        };
+        doc = await task.promise;
+        if (disposed) { doc.destroy(); return; }
+        var first = await doc.getPage(1);
+        var view = first.getViewport({ scale: 1 });
+        ratio = view.height / view.width;
+        host.textContent = '';
+        var stack = el('div', { class: 'pdf-pages' });
+        host.append(stack);
+        counter.textContent = 'Page 1 of ' + doc.numPages;
+        var nearby = new IntersectionObserver(function (entries) {
+          entries.forEach(function (io) {
+            var entry = pages[Number(io.target.dataset.index)];
+            if (io.isIntersecting) draw(entry); else release(entry);
+          });
+        }, { rootMargin: '150% 0px' });
+        var reading = new IntersectionObserver(function (entries) {
+          entries.forEach(function (io) {
+            if (io.isIntersecting) counter.textContent = 'Page ' + io.target.dataset.number + ' of ' + doc.numPages;
+          });
+        }, { rootMargin: '-45% 0px -50% 0px' });
+        observers.push(nearby, reading);
+        for (var i = 1; i <= doc.numPages; i++) {
+          var sheet = el('div', { class: 'pdf-sheet is-loading' });
+          sheet.style.aspectRatio = '1 / ' + ratio.toFixed(4);
+          var figure = el('figure', { class: 'pdf-page', 'data-index': i - 1, 'data-number': i }, [
+            sheet,
+            el('figcaption', { text: 'Page ' + i + ' of ' + doc.numPages })
+          ]);
+          stack.append(figure);
+          pages.push({ number: i, sheet: sheet, rendered: false, task: null });
+          nearby.observe(figure);
+          reading.observe(figure);
+        }
+      } catch (err) {
+        if (!disposed) viewerError(host, source, 'The viewer did not load or the file is unreadable.');
+      }
+    })();
+
+    return {
+      dispose: function () {
+        disposed = true;
+        observers.forEach(function (io) { io.disconnect(); });
+        pages.forEach(function (entry) { if (entry.task) entry.task.cancel(); });
+        if (doc) doc.destroy();
+      }
+    };
+  }
+
+  function related(note) {
+    return state.notes
+      .filter(function (other) { return other.id !== note.id; })
+      .map(function (other) {
+        var shared = (other.panels || []).filter(function (p) { return (note.panels || []).indexOf(p) >= 0; }).length;
+        return { note: other, score: (other.tag === note.tag ? 2 : 0) + shared };
+      })
+      .filter(function (item) { return item.score > 0; })
+      .sort(function (a, b) { return b.score - a.score || String(b.note.date).localeCompare(String(a.note.date)); })
+      .slice(0, 3)
+      .map(function (item) { return item.note; });
+  }
+
+  function issueLink(note, label, css) {
+    if (!note) {
+      return el('span', { class: 'btn ' + css, 'aria-disabled': 'true' }, [el('small', { text: label }), el('span', { text: 'None' })]);
+    }
+    return el('a', { class: 'btn ' + css, href: '#' + encodeURIComponent(note.id) }, [el('small', { text: label }), el('span', { text: note.title })]);
+  }
+
+  async function renderReport(note, moveFocus) {
+    closeViewer();
     clearObjectUrls();
-    var note = state.notes.find(function (n) { return n.id === state.current; });
-    if (!note) return renderEmpty();
-    var reader = $('reader');
-    var meta = el('p', { class: 'r-meta' }, [formatDate(note.date), el('span', { class: 'badge', text: note.tag })]);
+    var host = $('report');
+    host.textContent = '';
+    var index = state.notes.indexOf(note);
+    var older = state.notes[index + 1] || null;
+    var newer = state.notes[index - 1] || null;
+
+    var meta = el('p', { class: 'meta-line' }, [
+      el('span', { text: 'No. ' + state.issues[note.id] }),
+      el('span', { text: 'Published ' + formatDate(note.date) }),
+      el('span', { class: 'badge', text: note.tag })
+    ]);
     if (isLocal(note.id)) meta.append(el('span', { class: 'badge local', text: 'Local, not yet in repo' }));
-    var links = el('p', { class: 'r-links' });
+
+    var links = el('p', { class: 'report-links' });
     if ((note.panels || []).length) {
       links.append(el('span', { text: 'Linked panels' }));
       note.panels.forEach(function (panel) {
         if (PANELS[panel]) links.append(el('a', { href: '../#' + panel, text: PANELS[panel] }));
       });
     }
-    var body = el('div', { class: 'md' });
-    body.innerHTML = window.renderMarkdown(note.body); // renderMarkdown escapes everything it is given
-    var nodes = [el('h2', { class: 'r-title', text: note.title }), meta];
-    if (links.childElementCount) nodes.push(links);
-    nodes.push(body);
 
-    if ((note.attachments || []).length) {
-      var pdfs = el('section', { class: 'pdfs', 'aria-label': 'PDF attachments' }, [el('h3', { text: 'Attachments' })]);
-      for (var i = 0; i < note.attachments.length; i++) {
-        pdfs.append(await pdfRow(note.attachments[i]));
+    var heading = el('h1', { tabindex: '-1', text: note.title });
+    var attachments = note.attachments || [];
+    var hasPdf = attachments.length > 0;
+    var grid = el('div', { class: 'report-grid' + (hasPdf ? '' : ' no-pdf') });
+
+    if (hasPdf) {
+      var viewerHost = el('div', {});
+      var counter = el('span', { class: 'page-count', role: 'status', text: 'Opening' });
+      var openLink = el('a', { target: '_blank', rel: 'noopener', text: 'Open' });
+      var downloadLink = el('a', { text: 'Download' });
+      var nameLabel = el('span', {});
+      var show = async function (attachment) {
+        closeViewer();
+        var source = await attachmentSource(attachment.file);
+        openLink.href = source.url;
+        downloadLink.href = source.url;
+        downloadLink.setAttribute('download', attachment.name);
+        nameLabel.textContent = attachment.name + ', ' + formatSize(attachment.size);
+        state.viewer = mountViewer(viewerHost, counter, source);
+      };
+      var picker = null;
+      if (attachments.length > 1) {
+        picker = el('div', { class: 'attachment-list', role: 'group', 'aria-label': 'Attachments' });
+        attachments.forEach(function (attachment) {
+          picker.append(el('button', { type: 'button', class: 'btn', text: attachment.name, onclick: function () { show(attachment); } }));
+        });
       }
-      nodes.push(pdfs);
+      grid.append(el('section', { class: 'viewer', 'aria-label': 'PDF reader' }, [
+        el('div', { class: 'viewer-bar' }, [counter, el('span', { class: 'acts' }, [openLink, downloadLink])]),
+        picker,
+        viewerHost
+      ]));
+      show(attachments[0]);
     }
-    nodes.push(el('div', { class: 'r-actions' }, [
-      el('button', { type: 'button', class: 'btn', text: 'Edit', onclick: function () { openEditor(note); } })
-    ]));
-    reader.textContent = '';
-    nodes.forEach(function (node) { reader.append(node); });
+
+    if (note.body) {
+      var body = el('div', { class: 'md' });
+      body.innerHTML = window.renderMarkdown(note.body); // renderMarkdown escapes everything it is given
+      if (hasPdf) {
+        var notes = el('details', { class: 'notes' }, [el('summary', { text: 'Key points' }), body]);
+        if (matchMedia('(min-width: 1101px)').matches) notes.open = true;
+        grid.append(notes);
+      } else {
+        grid.append(body);
+      }
+    }
+
+    var relatedNotes = related(note);
+    var relatedRow = el('section', { class: 'related', 'aria-labelledby': 'related-h' }, [el('h2', { id: 'related-h', text: 'Related reports' })]);
+    if (relatedNotes.length) {
+      var row = el('div', { class: 'related-row' });
+      relatedNotes.forEach(function (other) {
+        row.append(el('a', { class: 'related-card', href: '#' + encodeURIComponent(other.id) }, [
+          cover(other, false),
+          el('span', {}, [el('strong', { text: other.title }), el('small', { text: formatDate(other.date) + ', ' + other.tag })])
+        ]));
+      });
+      relatedRow.append(row);
+    } else {
+      relatedRow.append(el('p', { class: 'related-none', text: 'No other reports share this tag or its panels yet.' }));
+    }
+
+    host.append(
+      el('a', { class: 'back', href: '#', text: 'All research' }),
+      heading,
+      meta,
+      links.childElementCount ? links : null,
+      el('div', { class: 'report-actions' }, [
+        el('button', { type: 'button', class: 'btn', text: 'Edit', onclick: function () { openEditor(note); } })
+      ]),
+      grid,
+      el('nav', { class: 'issue-nav', 'aria-label': 'Move between issues' }, [
+        issueLink(older, 'Previous issue', 'prev'),
+        issueLink(newer, 'Next issue', 'next')
+      ]),
+      relatedRow
+    );
+    if (moveFocus) heading.focus({ preventScroll: true });
   }
 
-  async function pdfRow(attachment) {
-    var url = await attachmentUrl(attachment.file);
-    var viewer = null;
-    var toggle = el('button', {
-      type: 'button', class: 'link-btn', text: 'Preview', 'aria-expanded': 'false',
-      onclick: function () {
-        if (viewer) {
-          viewer.remove(); viewer = null;
-          toggle.textContent = 'Preview'; toggle.setAttribute('aria-expanded', 'false');
-          return;
-        }
-        viewer = el('iframe', { class: 'pdf-view', src: url, title: 'Preview of ' + attachment.name });
-        row.after(viewer);
-        toggle.textContent = 'Close preview'; toggle.setAttribute('aria-expanded', 'true');
-      }
-    });
-    var row = el('div', { class: 'pdf-row' }, [
-      el('span', {}, [attachment.name, el('span', { class: 'sz', text: formatSize(attachment.size) })]),
-      el('span', { class: 'acts' }, [
-        toggle,
-        el('a', { href: url, target: '_blank', rel: 'noopener', text: 'Open' }),
-        el('a', { href: url, download: attachment.name, text: 'Download' })
-      ])
-    ]);
-    return row;
+  function route(moveFocus) {
+    var note = currentNote();
+    var library = $('library');
+    var report = $('report');
+    if (note) {
+      library.hidden = true;
+      report.hidden = false;
+      document.title = note.title + ' | Soundings';
+      renderReport(note, moveFocus);
+      scrollTo(0, 0);
+    } else {
+      closeViewer();
+      clearObjectUrls();
+      report.textContent = '';
+      report.hidden = true;
+      library.hidden = false;
+      document.title = 'Research | Soundings';
+      if (moveFocus) $('lib-h').focus({ preventScroll: true });
+    }
   }
 
   function renderAll(message) {
     merge();
     renderStatus(message);
+    renderLatest();
     renderChips();
     renderList();
-    return renderReader();
-  }
-
-  function select(id, move) {
-    state.current = id;
-    history.replaceState(null, '', '#' + encodeURIComponent(id));
-    renderList();
-    renderReader().then(function () {
-      if (move) {
-        $('reader').focus({ preventScroll: true });
-        if (matchMedia('(max-width: 760px)').matches) $('reader').scrollIntoView({ block: 'start' });
-      }
-    });
+    route(false);
   }
 
   // --- editor -------------------------------------------------------------
@@ -304,6 +560,7 @@
     form.elements.title.value = note ? note.title : '';
     form.elements.date.value = note ? note.date : todaySgt();
     form.elements.tag.value = note ? note.tag : (state.tag || guessTag(presetPanel));
+    form.elements.summary.value = note ? (note.summary || '') : '';
     form.elements.body.value = note ? note.body : '';
     form.querySelectorAll('input[name=panels]').forEach(function (box) {
       box.checked = note ? (note.panels || []).indexOf(box.value) >= 0 : box.value === presetPanel;
@@ -382,6 +639,7 @@
       var note = {
         id: id, date: date, title: title,
         tag: form.elements.tag.value,
+        summary: form.elements.summary.value.trim(),
         panels: Array.from(form.querySelectorAll('input[name=panels]:checked')).map(function (box) { return box.value; }),
         body: form.elements.body.value,
         attachments: attachments,
@@ -389,10 +647,9 @@
       };
       await putNote(note);
       state.local.set(id, note);
-      state.current = id;
-      history.replaceState(null, '', '#' + encodeURIComponent(id));
       editor.close();
-      await renderAll('Saved.');
+      if (currentId() !== id) location.hash = encodeURIComponent(id);
+      renderAll('Saved.');
     } catch (err) {
       showFormError('Could not save in this browser: ' + (err && err.message ? err.message : 'storage error') + '. Export your text before closing this page.');
     }
@@ -411,10 +668,9 @@
       await dropNote(note.id);
       state.local.delete(note.id);
     }
-    state.current = null;
-    history.replaceState(null, '', location.pathname);
     editor.close();
-    await renderAll('Deleted.');
+    history.replaceState(null, '', location.pathname);
+    renderAll('Deleted.');
   }
 
   // --- zip export and import ---------------------------------------------
@@ -547,16 +803,26 @@
           state.local.set(note.id, note);
         }
       }
-      await renderAll('Imported ' + valid.length + (valid.length === 1 ? ' note' : ' notes') + ' and ' + pdfs + ' PDF' + (pdfs === 1 ? '' : 's') + (skipped ? ', skipped ' + skipped + ' invalid' : '') + '.');
+      renderAll('Imported ' + valid.length + (valid.length === 1 ? ' note' : ' notes') + ' and ' + pdfs + ' PDF' + (pdfs === 1 ? '' : 's') + (skipped ? ', skipped ' + skipped + ' invalid' : '') + '.');
     } catch (err) {
       renderStatus('Import failed: ' + (err && err.message ? err.message : 'unreadable file') + ' Nothing was changed.');
     }
   }
 
   // --- wiring -------------------------------------------------------------
+  function resetFilters() {
+    state.tag = '';
+    state.query = '';
+    $('search').value = '';
+    renderChips();
+    renderList();
+    $('search').focus();
+  }
+
   $('new-note').addEventListener('click', function () { openEditor(null); });
   $('export').addEventListener('click', exportAll);
   $('import').addEventListener('click', function () { $('import-file').click(); });
+  $('reset').addEventListener('click', resetFilters);
   $('import-file').addEventListener('change', function (event) {
     if (event.target.files[0]) importFile(event.target.files[0]);
     event.target.value = '';
@@ -588,24 +854,24 @@
     drop.addEventListener(name, function (event) { event.preventDefault(); drop.classList.remove('over'); });
   });
   drop.addEventListener('drop', function (event) { addFiles(Array.from(event.dataTransfer.files)); });
+  addEventListener('hashchange', function () { route(true); });
 
   // --- start --------------------------------------------------------------
   (async function start() {
     try {
       var response = await fetch(DATA_DIR + 'entries.json', { cache: 'no-cache' });
-      if (response.ok) state.repo = (await response.json()).filter(validNote).map(clean);
-    } catch (err) { /* repo file unreachable: local notes still work */ }
+      if (!response.ok) throw new Error(String(response.status));
+      var repo = (await response.json()).filter(validNote);
+      repo.forEach(function (note) { if (note.cover) state.covers[note.id] = note.cover; });
+      state.repo = repo.map(clean);
+    } catch (err) {
+      state.loadFailed = true; // local notes still work, and the status line says what happened
+    }
     var local = [];
     try { local = (await getLocalNotes()) || []; } catch (err) { state.persistent = false; }
-    if (!(await openDb())) state.persistent = false;
     local.forEach(function (note) { state.local.set(note.id, note); });
-    merge();
 
-    var hash = decodeURIComponent(location.hash.slice(1));
-    if (hash && state.notes.some(function (n) { return n.id === hash; })) state.current = hash;
-    else if (state.notes.length && matchMedia('(min-width: 761px)').matches) state.current = state.notes[0].id;
-
-    await renderAll();
+    renderAll(state.loadFailed ? 'Published reports could not be loaded, so only notes in this browser are shown.' : '');
     var params = new URLSearchParams(location.search);
     var preset = params.get('new');
     if (preset !== null) {
