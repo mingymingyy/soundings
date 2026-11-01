@@ -9,7 +9,6 @@ fetches the feeds about every 15 minutes, so no API key or third-party request e
 | --- | --- | --- |
 | US 2Y, 10Y, 2s10s | US Treasury daily par yield CSV | Daily, published after the US close |
 | Fed funds target | Federal Reserve Board, open market operations page | Range in effect, carried forward daily |
-| SORA 3M compounded | MAS Domestic Interest Rates | Daily. Empty state when MAS is down |
 | SGS 2Y, 10Y | MAS benchmark prices and yields | Falls back to SingStat M700071 month-end prints, labelled Monthly |
 | FX, commodities, equities, VIX | Yahoo Finance chart endpoint | Unofficial and exchange-delayed. FRED's keyless CSV is the fallback where a series exists |
 | Central banks | Fed, ECB, BoJ and MAS statements, ChinaMoney LPR | Parsed from the official documents on every run |

@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "id": "2026-10-27-2026-q4-outlook",
+    "date": "2026-10-27",
+    "title": "2026 Q4 Outlook",
+    "tag": "Rates",
+    "panels": [
+      "rates",
+      "fx",
+      "commodities",
+      "equities",
+      "banks"
+    ],
+    "body": "Macro outlook by Chua Ming Yuan, dated 27 Oct 2026, before the October FOMC and ECB meetings. The full note and charts are in the attached PDF.\n\n## Central bank paths\n\n| Bank | Call | Reasoning |\n|---|---|---|\n| Fed | Hold 28 Oct at 3.75% to 4.00%. 25bp hike 8 to 9 Dec, 25bp hike Jan 2027 to 4.25% to 4.50%, then pause | Energy shock passing through to core. December is largely priced, so limited value in expressing that view |\n| ECB | Hold 29 Oct at 2.50%. 25bp hike 17 Dec, deposit rate peaks at 2.75% | Less tightening than the three more hikes markets price by Sep 2027, as financial conditions and French spreads do part of the work |\n\n## Regional views\n\n- **US rates:** yields are attractive, but a sustained rally needs lower energy prices or slower growth.\n- **USD:** asymmetric upside. Tailwinds from a Fed hiking cycle, and lower energy would not drive significant weakness.\n- **US growth:** resilient near term, slowing to below trend in H1 2027 as real wages fall.\n- **US inflation:** sticky and elevated over the next 12 months as oil prices stay high.\n- **Euro area rates:** expect the OAT-Bund spread to keep widening from 150.8bp, with S&P's 27 Nov review and the November budget votes as catalysts.\n- **EUR:** bearish, as hikes get priced out while the Fed holds or hikes again, and on energy exposure and French political risk.\n- **Euro area inflation:** elevated as the energy shock persists, with pass-through to core building over 12 months.\n\n## Portfolio themes\n\n1. Energy prices stay elevated for longer than markets price.\n2. Investors question whether AI spending can generate enough free cash flow.\n3. Geopolitical fragmentation keeps central banks buying gold.\n\n## Trades\n\n| Trade | Expression | Core argument |\n|---|---|---|\n| Long gold | SPDR Gold Shares on SGX (O87). Starter position now, complete after the Jan 2027 FOMC | Central bank buying sets a floor, and gold diversifies the rest of the book |\n| Long equal weight | Long RSP, short SPY | Leadership broadens away from AI and semiconductors as earnings growth widens |\n| Long US energy equities | XLE | Equities are valued on long-dated oil prices, while producers earn today's spot prices |\n| Long IG, short HY | Credit spread gap | Higher rates and refinancing squeeze weak borrowers, led by debt-funded AI names |\n| Long US 5Y breakevens | Buy 5Y TIPS, sell 5Y nominal Treasuries | At 2.39%, the market prices a fast energy fade |\n",
+    "attachments": [
+      {
+        "name": "Ming Yuan Macro Outlook.pdf",
+        "file": "attachments/2026-q4-outlook-ming-yuan-macro-outlook.pdf",
+        "size": 1569121
+      }
+    ],
+    "updated": "2026-11-01T08:00:00Z"
+  }
+]

@@ -28,7 +28,6 @@ SGT = dt.timezone(dt.timedelta(hours=8), "SGT")
 STALE_DAYS = 7
 SPARK_POINTS = 66  # about three months of daily closes
 
-MAS_SORA_URL = "https://eservices.mas.gov.sg/statistics/dir/DomesticInterestRates.aspx"
 MAS_SGS_URL = "https://eservices.mas.gov.sg/statistics/fdanet/BenchmarkPricesAndYields.aspx"
 MAS_ARC_URL = "https://www.mas.gov.sg/monetary-policy/advance-release-calendar"
 SINGSTAT_ARC_URL = "https://www.singstat.gov.sg/data-tools-services/advance-release-calendar"
@@ -289,22 +288,6 @@ def _table_obs(page: str, wanted: dict[str, str]) -> dict[str, list[tuple[dt.dat
     return out
 
 
-def mas_sora() -> list[tuple[dt.date, float]]:
-    page = _mas_page(MAS_SORA_URL)
-    checks = re.findall(
-        r'name="([^"]*ColumnsCheckBoxList\$(\d+))"', page
-    )
-    labels = dict(re.findall(r'for="ContentPlaceHolder1_ColumnsCheckBoxList_(\d+)"[^>]*>([^<]+)', page))
-    target = [name for name, idx in checks if labels.get(idx, "").strip() == "3-month Compounded SORA"]
-    if not target:
-        raise FeedError("MAS form changed: 3-month Compounded SORA column not offered")
-    result = http(MAS_SORA_URL, data=_mas_form(page, target, "ctl00$ContentPlaceHolder1$Button1"), timeout=40).decode("utf-8", "ignore")
-    obs = _table_obs(result, {"sora": "3-month|SORA"})["sora"]
-    if not obs:
-        raise FeedError("MAS returned no 3M compounded SORA rows")
-    return sorted(set(obs))
-
-
 def mas_sgs() -> dict[str, list[tuple[dt.date, float]]]:
     page = _mas_page(MAS_SGS_URL)
     name, daily = _select_value(page, "FrequencyDropDownList", "Daily")
@@ -431,7 +414,6 @@ SRC_YAHOO = {"name": "Yahoo Finance", "url": "https://finance.yahoo.com/"}
 SRC_FRED = {"name": "FRED, St. Louis Fed", "url": "https://fred.stlouisfed.org/"}
 SRC_TREASURY = {"name": "US Treasury", "url": TREASURY_PAGE}
 SRC_FED = {"name": "Federal Reserve Board", "url": FED_OPEN_MARKET}
-SRC_MAS = {"name": "MAS", "url": MAS_SORA_URL}
 SRC_MAS_SGS = {"name": "MAS", "url": MAS_SGS_URL}
 SRC_SINGSTAT = {"name": "SingStat", "url": SINGSTAT_RATES_PAGE}
 
@@ -483,7 +465,6 @@ def rates_rows() -> tuple[list[dict], dict | None]:
         "us10y": {"id": "us10y", "label": "US 10Y", "sub": "Treasury par yield", "kind": "bp", "dp": 2, "suffix": "%"},
         "us2s10s": {"id": "us2s10s", "label": "US 2s10s", "sub": "10Y minus 2Y", "kind": "bpv", "dp": 0, "suffix": " bp"},
         "fftarget": {"id": "fftarget", "label": "Fed funds target", "sub": "Upper bound drives the changes", "kind": "bp", "dp": 2},
-        "sora3m": {"id": "sora3m", "label": "SORA 3M", "sub": "Compounded in arrears", "kind": "bp", "dp": 4, "suffix": "%"},
         "sgs2y": {"id": "sgs2y", "label": "SGS 2Y", "sub": "Benchmark yield", "kind": "bp", "dp": 2, "suffix": "%"},
         "sgs10y": {"id": "sgs10y", "label": "SGS 10Y", "sub": "Benchmark yield", "kind": "bp", "dp": 2, "suffix": "%"},
     }
@@ -528,12 +509,6 @@ def rates_rows() -> tuple[list[dict], dict | None]:
         rows["fftarget"] = empty_row(meta["fftarget"], f"Federal Reserve page failed: {exc}", SRC_FED)
 
     try:
-        obs = mas_sora()
-        rows["sora3m"] = make_row(meta["sora3m"], obs, SRC_MAS, date_as_of(obs[-1][0]))
-    except Exception as exc:  # noqa: BLE001
-        rows["sora3m"] = empty_row(meta["sora3m"], str(exc), SRC_MAS)
-
-    try:
         sgs = mas_sgs()
         for key in ("sgs2y", "sgs10y"):
             rows[key] = make_row(meta[key], sgs[key], SRC_MAS_SGS, date_as_of(sgs[key][-1][0]))
@@ -550,7 +525,7 @@ def rates_rows() -> tuple[list[dict], dict | None]:
             for key in ("sgs2y", "sgs10y"):
                 rows[key] = empty_row(meta[key], f"{reason}; SingStat fallback failed: {inner}", SRC_MAS_SGS)
 
-    return [rows[k] for k in ("us2y", "us10y", "us2s10s", "fftarget", "sora3m", "sgs2y", "sgs10y")], curve
+    return [rows[k] for k in ("us2y", "us10y", "us2s10s", "fftarget", "sgs2y", "sgs10y")], curve
 
 
 # --- schedules -------------------------------------------------------------
