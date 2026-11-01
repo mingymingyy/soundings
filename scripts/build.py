@@ -149,7 +149,7 @@ def footer(prefix: str) -> str:
     <div>
       <h2>Method</h2>
       <ul>
-        <li>Refreshed about every 15 minutes from free public sources, with no API keys.</li>
+        <li>Built from free public sources with no API keys. Refreshes are scheduled every 15 minutes, but GitHub can delay them by hours, so check the last updated time.</li>
         <li>Yahoo Finance is an unofficial, exchange-delayed feed. Treat it as indicative.</li>
         <li>A market-implied Fed path is left out because no free public source publishes one.</li>
         <li>A failed feed shows a labelled empty state, or its last good value marked stale for up to 7 days.</li>

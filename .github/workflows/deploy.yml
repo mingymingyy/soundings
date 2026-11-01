@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "*/15 * * * *"
+    # Off the hour and quarter-hour: GitHub delays or drops scheduled runs most at busy minutes.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
 permissions:
