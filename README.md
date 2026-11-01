@@ -1,7 +1,8 @@
 # Soundings
 
 A live global macro dashboard and a research ledger, read from Singapore. It is a static site: GitHub Actions
-fetches the feeds about every 15 minutes, so no API key or third-party request ever reaches the browser.
+fetches the feeds on a 15-minute schedule, which GitHub can delay by hours. No API key or third-party request ever
+reaches the browser.
 
 ## Data
 
